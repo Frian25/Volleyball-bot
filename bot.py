@@ -18,7 +18,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
 # ⚠️ Заміни назву таблиці на свою (наприклад, "Volleyball Scores")
-sheet = client.open("Volleyball Scores").sheet1
+sheet = client.open("Matches").sheet1
 
 # Функція /result команда1 рахунок1 команда2 рахунок2
 def result(update, context):
@@ -55,3 +55,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
