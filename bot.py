@@ -18,8 +18,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
 # ⚠️ Заміни назву таблиці на свою (наприклад, "Volleyball Scores")
-sheet = client.open("https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=951272735#gid=951272735").sheet1
-
+sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250").worksheet("Matches")
 # Функція /result команда1 рахунок1 команда2 рахунок2
 def result(update, context):
     try:
