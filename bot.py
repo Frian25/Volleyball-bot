@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import gspread
+from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from telegram.ext import Updater, CommandHandler
 
@@ -27,7 +28,7 @@ def result(update, context):
         text = " ".join(context.args)
 
         if "-" not in text:
-            raise ValueError("Формат має бути: Команда1 рахунок1 - рахунок2 Команда2")
+            raise ValueError("Команда має містити '-'")
 
         part1, part2 = [part.strip() for part in text.split("-", 1)]
 
