@@ -22,44 +22,55 @@ sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt
 # Функція /result команда1 рахунок1 команда2 рахунок2
 def result(update, context):
     try:
-        # 1. Отримуємо повідомлення у форматі: "Команда1 2 - Команда2 1"
+        # Об'єднуємо аргументи у рядок, наприклад:
+        # "Команда1 2 - 1 Команда2"
         text = " ".join(context.args)
+
         if "-" not in text:
-            raise ValueError("Формат має бути: Команда1 2 - Команда2 1")
+            raise ValueError("Формат має бути: Команда1 рахунок1 - рахунок2 Команда2")
 
         part1, part2 = [part.strip() for part in text.split("-", 1)]
 
+        # part1: "Команда1 2"
+        # part2: "1 Команда2"
+
+        # В part1 останнє слово — рахунок1, все інше — команда1
         tokens1 = part1.rsplit(" ", 1)
-        tokens2 = part2.rsplit(" ", 1)
-
-        if len(tokens1) != 2 or len(tokens2) != 2:
-            raise ValueError("Не вдалося розпізнати команди або рахунки")
-
+        if len(tokens1) != 2:
+            raise ValueError("Не вдалося розпізнати команду 1 і рахунок")
         team1 = tokens1[0]
         score1 = int(tokens1[1])
-        team2 = tokens2[0]
-        score2 = int(tokens2[1])
 
-        # 2. Поточна дата у форматі YYYY-MM-DD
+        # В part2 перше слово — рахунок2, все інше — команда2
+        tokens2 = part2.split(" ", 1)
+        if len(tokens2) != 2:
+            raise ValueError("Не вдалося розпізнати рахунок і команду 2")
+        score2 = int(tokens2[0])
+        team2 = tokens2[1]
+
+        # Поточна дата YYYY-MM-DD
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # 3. Підрахунок match_number за сьогодні
+        # Отримаємо всі дані з таблиці
         all_rows = sheet.get_all_values()
         headers = all_rows[0]
         data_rows = all_rows[1:]
 
-        date_index = headers.index("date") if "date" in headers else 1  # safety
+        # Знайдемо індекс стовпця з датою
+        date_index = headers.index("date") if "date" in headers else 1
+
+        # Порахувати матчі сьогодні
         today_matches = [row for row in data_rows if len(row) > date_index and row[date_index] == today]
         match_number = len(today_matches) + 1
 
-        # 4. Унікальний match_id (можна замінити на щось інше, якщо треба)
-        match_id = str(uuid.uuid4())[:8]  # короткий UUID
+        # Унікальний match_id
+        match_id = str(uuid.uuid4())[:8]
 
-        # 5. Порожні місця для середнього рейтингу
+        # Порожні avg_rate
         avg_rate_team_1 = ""
         avg_rate_team_2 = ""
 
-        # 6. Запис у таблицю
+        # Запис у таблицю
         row_to_add = [
             match_id,
             today,
@@ -76,7 +87,7 @@ def result(update, context):
         update.message.reply_text(f"✅ Збережено результат: {team1} {score1} — {team2} {score2} (матч #{match_number} за {today})")
 
     except Exception as e:
-        update.message.reply_text(f"⚠️ Помилка: {e}\nСпробуй у форматі: /result Команда1 2 - Команда2 1")
+        update.message.reply_text(f"⚠️ Помилка: {e}\nСпробуй у форматі: /result Команда1 рахунок1 - рахунок2 Команда2")
 
 def main():
     # ⚠️ У Render додай змінну BOT_TOKEN (з BotFather)
