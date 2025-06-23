@@ -91,6 +91,27 @@ def result(update, context):
     except Exception as e:
         update.message.reply_text(f"⚠️ Помилка: {e}\nСпробуй у форматі: /result Команда1 рахунок1 - рахунок2 Команда2")
 
+
+def delete(update, context):
+    try:
+        # Отримати всі рядки (включаючи заголовок)
+        all_rows = sheet.get_all_values()
+
+        if len(all_rows) <= 1:
+            update.message.reply_text("⚠️ У таблиці немає даних для видалення.")
+            return
+
+        # Визначити індекс останнього рядка
+        last_row_index = len(all_rows)
+
+        # Видалити останній рядок
+        sheet.delete_rows(last_row_index)
+
+        update.message.reply_text("✅ Останній запис успішно видалено.")
+    except Exception as e:
+        update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
+
+
 def main():
     # ⚠️ У Render додай змінну BOT_TOKEN (з BotFather)
     bot_token = os.environ["BOT_TOKEN"]
