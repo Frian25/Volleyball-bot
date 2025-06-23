@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import gspread
+import uuid
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from telegram.ext import Updater, CommandHandler
