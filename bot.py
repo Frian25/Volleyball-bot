@@ -120,7 +120,7 @@ def main():
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("result", result))
-    dp.add_handler(CommandHandler("delete", delete_last))
+    dp.add_handler(CommandHandler("delete", delete))
 
     logging.info("🤖 Бот запущений і слухає команди.")
     updater.start_polling()
