@@ -75,10 +75,6 @@ def result(update, context):
         # Унікальний match_id
         match_id = str(uuid.uuid4())[:8]
 
-        # Порожні avg_rate
-        avg_rate_team_1 = ""
-        avg_rate_team_2 = ""
-
         # Запис у таблицю
         row_to_add = [
             match_id,
@@ -86,8 +82,6 @@ def result(update, context):
             match_number,
             team1,
             team2,
-            avg_rate_team_1,
-            avg_rate_team_2,
             score1,
             score2
         ]
