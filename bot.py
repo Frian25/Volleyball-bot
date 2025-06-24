@@ -35,6 +35,9 @@ bot = Bot(token=bot_token)
 # Функція /result команда1 рахунок1 команда2 рахунок2
 def result(update, context):
     try:
+        if update.message.chat.type == 'private':
+            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.")
+            return
         # Об'єднуємо аргументи у рядок
         text = " ".join(context.args)
 
@@ -96,20 +99,40 @@ def result(update, context):
 
 def delete(update, context):
     try:
+        # 🔒 Дозволити лише в групових чатах
+        if update.message.chat.type == 'private':
+            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.")
+            return
+
         # Отримати всі рядки (включаючи заголовок)
         all_rows = sheet.get_all_values()
-
         if len(all_rows) <= 1:
             update.message.reply_text("⚠️ У таблиці немає даних для видалення.")
             return
 
-        # Визначити індекс останнього рядка
-        last_row_index = len(all_rows)
+        headers = all_rows[0]
+        data_rows = all_rows[1:]
+        date_index = headers.index("date") if "date" in headers else 1
 
-        # Видалити останній рядок
-        sheet.delete_rows(last_row_index)
+        today = datetime.now().strftime("%Y-%m-%d")
 
-        update.message.reply_text("✅ Останній запис успішно видалено.")
+        # Знайти всі індекси рядків, де date == today
+        deletable_indices = [
+            i + 2  # +2 бо 1-й рядок — заголовки, індексація з 1
+            for i, row in enumerate(data_rows)
+            if len(row) > date_index and row[date_index] == today
+        ]
+
+        if not deletable_indices:
+            update.message.reply_text("⚠️ Немає записів за сьогодні для видалення.")
+            return
+
+        # Видалити всі знайдені рядки знизу вгору (щоб індекси не зміщувалися)
+        for i in reversed(deletable_indices):
+            sheet.delete_rows(i)
+
+        update.message.reply_text(f"✅ Видалено {len(deletable_indices)} рядків з поточною датою ({today}).")
+
     except Exception as e:
         update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
 
