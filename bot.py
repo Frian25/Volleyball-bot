@@ -5,13 +5,17 @@ import gspread
 import uuid
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-from telegram.ext import Updater, CommandHandler
+from flask import Flask, request
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, CommandHandler
 
 # Увімкнути логування
 logging.basicConfig(level=logging.INFO)
 
+# Flask додаток
+app = Flask(__name__)
+
 # Отримуємо JSON з ключами з середовища
-# ⚠️ У Render додай змінну CREDS_JSON (дивись далі)
 creds_dict = json.loads(os.environ["CREDS_JSON"])
 
 # Права доступу до Google Sheets API
@@ -19,22 +23,25 @@ scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
-# ⚠️ Заміни назву таблиці на свою (наприклад, "Volleyball Scores")
-sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250").worksheet("Matches")
+sheet = client.open_by_url(
+    "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250").worksheet(
+    "Matches")
+
+# Ініціалізація бота
+bot_token = os.environ["BOT_TOKEN"]
+bot = Bot(token=bot_token)
+
+
 # Функція /result команда1 рахунок1 команда2 рахунок2
 def result(update, context):
     try:
-        # Об'єднуємо аргументи у рядок, наприклад:
-        # "Команда1 2 - 1 Команда2"
+        # Об'єднуємо аргументи у рядок
         text = " ".join(context.args)
 
         if "-" not in text:
             raise ValueError("Команда має містити '-'")
 
         part1, part2 = [part.strip() for part in text.split("-", 1)]
-
-        # part1: "Команда1 2"
-        # part2: "1 Команда2"
 
         # В part1 останнє слово — рахунок1, все інше — команда1
         tokens1 = part1.rsplit(" ", 1)
@@ -86,7 +93,8 @@ def result(update, context):
         ]
 
         sheet.append_row(row_to_add)
-        update.message.reply_text(f"✅ Збережено результат: {team1} {score1} — {team2} {score2} (матч #{match_number} за {today})")
+        update.message.reply_text(
+            f"✅ Збережено результат: {team1} {score1} — {team2} {score2} (матч #{match_number} за {today})")
 
     except Exception as e:
         update.message.reply_text(f"⚠️ Помилка: {e}\nСпробуй у форматі: /result Команда1 рахунок1 - рахунок2 Команда2")
@@ -112,20 +120,46 @@ def delete(update, context):
         update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
 
 
-def main():
-    # ⚠️ У Render додай змінну BOT_TOKEN (з BotFather)
-    bot_token = os.environ["BOT_TOKEN"]
+# Налаштування диспетчера
+dispatcher = Dispatcher(bot, None, workers=0)
+dispatcher.add_handler(CommandHandler("result", result))
+dispatcher.add_handler(CommandHandler("delete", delete))
 
-    updater = Updater(bot_token, use_context=True)
-    dp = updater.dispatcher
 
-    dp.add_handler(CommandHandler("result", result))
-    dp.add_handler(CommandHandler("delete", delete))
+# Webhook endpoint
+@app.route(f'/{bot_token}', methods=['POST'])
+def webhook():
+    try:
+        # Отримати дані від Telegram
+        json_data = request.get_json()
 
-    logging.info("🤖 Бот запущений і слухає команди.")
-    updater.start_polling()
-    updater.idle()
+        # Обробити оновлення
+        update = Update.de_json(json_data, bot)
+        dispatcher.process_update(update)
+
+        return 'OK'
+    except Exception as e:
+        logging.error(f"Помилка webhook: {e}")
+        return 'ERROR', 500
+
+
+# Health check endpoint
+@app.route('/', methods=['GET'])
+def health():
+    return 'Bot is running!'
+
+
+# Налаштування webhook при запуску
+def setup_webhook():
+    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{bot_token}"
+    bot.set_webhook(url=webhook_url)
+    logging.info(f"Webhook встановлено на: {webhook_url}")
+
 
 if __name__ == "__main__":
-    main()
+    # Встановити webhook
+    setup_webhook()
 
+    # Запустити Flask
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
