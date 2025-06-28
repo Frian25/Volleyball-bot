@@ -88,11 +88,30 @@ def result(update, context):
             score1,
             score2
         ]
-
         sheet.append_row(row_to_add)
-        update.message.reply_text(
-            f"✅ Збережено результат: {team1} {score1} — {team2} {score2} (матч #{match_number} за {today})")
+        # ПІДСУМКОВИЙ РАХУНОК ЗА СЬОГОДНІ
+        totals = {}
 
+        # Враховуємо попередні матчі
+        for row in today_matches:
+            if len(row) >= 7:
+                t1, t2 = row[3], row[4]
+                s1, s2 = int(row[5]), int(row[6])
+                totals[t1] = totals.get(t1, 0) + s1
+                totals[t2] = totals.get(t2, 0) + s2
+
+        # Додаємо поточний матч
+        totals[team1] = totals.get(team1, 0) + score1
+        totals[team2] = totals.get(team2, 0) + score2
+
+        # Сформуємо зручний вигляд рахунку
+        summary = f"{team1} {totals[team1]} — {totals[team2]} {team2}"
+
+        # Надсилання відповіді
+        update.message.reply_text(
+            f"✅ Збережено результат: {team1} {score1} — {team2} {score2} (матч #{match_number} за {today})\n"
+            f"📊 Загальний рахунок: {summary}"
+        )
     except Exception as e:
         update.message.reply_text(f"⚠️ Помилка: {e}\nСпробуй у форматі: /result Команда1 рахунок1 - рахунок2 Команда2")
 
