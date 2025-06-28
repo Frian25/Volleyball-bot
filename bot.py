@@ -128,8 +128,7 @@ def delete(update, context):
             return
 
         # Видалити всі знайдені рядки знизу вгору (щоб індекси не зміщувалися)
-        for i in reversed(deletable_indices):
-            sheet.delete_rows(i[-1])
+        sheet.delete_rows(deletable_indices[-1])
 
         update.message.reply_text(f"✅ Видалено {len(deletable_indices)} рядків з поточною датою ({today}).")
 
