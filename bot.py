@@ -90,22 +90,28 @@ def result(update, context):
         ]
         sheet.append_row(row_to_add)
         # ПІДСУМКОВИЙ РАХУНОК ЗА СЬОГОДНІ
-        totals = {}
+        wins = {}
 
         # Враховуємо попередні матчі
         for row in today_matches:
             if len(row) >= 7:
-                t1, t2 = row[3], row[4]
-                s1, s2 = int(row[5]), int(row[6])
-                totals[t1] = totals.get(t1, 0) + s1
-                totals[t2] = totals.get(t2, 0) + s2
+                winner = row[7]  # Припускаю, що переможець у 8-му стовпчику (індекс 7)
+                if winner:  # Якщо не нічия і переможець є
+                    wins[winner] = wins.get(winner, 0) + 1
 
         # Додаємо поточний матч
-        totals[team1] = totals.get(team1, 0) + score1
-        totals[team2] = totals.get(team2, 0) + score2
+        if team1 != team2:  # перевіримо чи матч не між однією командою (на всяк випадок)
+            if score1 > score2:
+                wins[team1] = wins.get(team1, 0) + 1
+            elif score2 > score1:
+                wins[team2] = wins.get(team2, 0) + 1
+            else:
+                wins[team1] = wins.get(team1, 0) + 1
+                wins[team2] = wins.get(team2, 0) + 1
+            # нічия — нічого не додаємо
 
-        # Сформуємо зручний вигляд рахунку
-        summary = f"{team1} {totals[team1]} — {totals[team2]} {team2}"
+        # Сформуємо зручний вигляд підсумку
+        summary = f"{team1} {wins.get(team1, 0)} — {wins.get(team2, 0)} {team2}"
 
         # Надсилання відповіді
         update.message.reply_text(
