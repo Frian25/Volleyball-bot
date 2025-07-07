@@ -532,10 +532,6 @@ def result(update, context):
             for team, count in sorted(wins.items(), key=lambda x: x[1], reverse=True):
                 message += f"  {team}: {count}\n"
 
-        if rating_changes:
-            message += "\n🏆 Зміни рейтингу:\n"
-            for change in rating_changes:
-                message += f"  {change}\n"
 
         update.message.reply_text(message)
 
