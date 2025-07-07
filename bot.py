@@ -27,6 +27,69 @@ sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250").worksheet(
     "Matches")
 
+
+def get_team_players(team_name, match_date):
+    """Отримати список гравців команди на певну дату"""
+    try:
+        teams_sheet = client.open_by_url(
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250").worksheet(
+            "Teams")
+
+        all_rows = teams_sheet.get_all_values()
+        headers = all_rows[0]
+        data_rows = all_rows[1:]
+
+        # Знайти рядок з потрібною командою і датою
+        for row in data_rows:
+            if len(row) >= 3 and row[0] == match_date:  # date
+                if row[1] == team_name:  # team_1
+                    return row[2].split(', ') if row[2] else []  # team_1_players
+                elif len(row) >= 5 and row[4] == team_name:  # team_2
+                    return row[5].split(', ') if row[5] else []  # team_2_players
+
+        return []
+    except Exception as e:
+        logging.error(f"Помилка при отриманні гравців команди: {e}")
+        return []
+
+
+def update_rating_table(match_id, match_date, team1, team2):
+    """Оновити таблицю Rating з інформацією про участь гравців"""
+    try:
+        rating_sheet = client.open_by_url(
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250").worksheet(
+            "Rating")
+
+        # Отримати гравців для обох команд
+        team1_players = get_team_players(team1, match_date)
+        team2_players = get_team_players(team2, match_date)
+
+        all_players = team1_players + team2_players
+
+        if not all_players:
+            logging.warning(f"Не знайдено гравців для команд {team1} і {team2} на дату {match_date}")
+            return
+
+        # Отримати заголовки таблиці Rating
+        rating_headers = rating_sheet.row_values(1)
+
+        # Підготувати рядок для додавання
+        row_to_add = [match_id, match_date]
+
+        # Для кожного гравця в заголовках (починаючи з 3-го стовпця)
+        for i in range(2, len(rating_headers)):
+            player_name = rating_headers[i]
+            # Поставити 1 якщо гравець брав участь, інакше 0
+            row_to_add.append(1 if player_name in all_players else 0)
+
+        # Додати рядок до таблиці Rating
+        rating_sheet.append_row(row_to_add)
+        logging.info(f"Додано рядок до Rating для матчу {match_id}")
+
+    except Exception as e:
+        logging.error(f"Помилка при оновленні таблиці Rating: {e}")
+
+
 # Ініціалізація бота
 bot_token = os.environ["BOT_TOKEN"]
 bot = Bot(token=bot_token)
@@ -89,6 +152,10 @@ def result(update, context):
             score2
         ]
         sheet.append_row(row_to_add)
+
+        # ДОДАНО: Оновити таблицю Rating
+        update_rating_table(match_id, today, team1, team2)
+
         # ПІДСУМКОВИЙ РАХУНОК ЗА СЬОГОДНІ
         wins = {}
 
