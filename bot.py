@@ -168,25 +168,43 @@ def calculate_dynamic_k_factor(games_played, player_rating=None):
 def get_player_games_count(player_name):
     """Отримати кількість зіграних матчів для гравця"""
     try:
-        rating_sheet = client.open_by_url(
+        # Отримуємо дані з таблиці Matches для точного підрахунку
+        matches_sheet = client.open_by_url(
             "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Rating")
+        ).worksheet("Matches")
 
-        all_rows = rating_sheet.get_all_values()
-        if len(all_rows) < 2:
+        teams_sheet = client.open_by_url(
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
+        ).worksheet("Teams")
+
+        matches_rows = matches_sheet.get_all_values()
+        teams_rows = teams_sheet.get_all_values()
+
+        if len(matches_rows) < 2 or len(teams_rows) < 2:
             return 0
 
-        headers = all_rows[0]
-        if player_name not in headers:
-            return 0
-
-        player_index = headers.index(player_name)
         games_count = 0
 
-        # Підрахувати кількість рядків, де гравець брав участь
-        for row in all_rows[1:]:
-            if len(row) > player_index and row[player_index]:
-                games_count += 1
+        # Для кожного матчу перевіряємо чи брав участь гравець
+        for match_row in matches_rows[1:]:  # Пропускаємо заголовки
+            if len(match_row) >= 2:  # match_id, date
+                match_date = match_row[1]
+
+                # Шукаємо склади команд на цю дату
+                for team_row in teams_rows[1:]:
+                    if len(team_row) >= 6 and team_row[0] == match_date:
+                        # Перевіряємо team_1_players та team_2_players
+                        team1_players = team_row[2].split(', ') if team_row[2] else []
+                        team2_players = team_row[5].split(', ') if len(team_row) > 5 and team_row[5] else []
+
+                        # Очищаємо імена від пробілів
+                        team1_players = [p.strip() for p in team1_players if p.strip()]
+                        team2_players = [p.strip() for p in team2_players if p.strip()]
+
+                        # Якщо гравець був у будь-якій команді в цьому матчі
+                        if player_name in team1_players or player_name in team2_players:
+                            games_count += 1
+                            break  # Знайшли участь у цьому матчі, переходимо до наступного
 
         return games_count
     except Exception as e:
@@ -224,9 +242,9 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
         # Отримати поточні рейтинги
         current_ratings = get_current_ratings()
 
-        # Додати нових гравців з початковим рейтингом
-        all_players = set(team1_players + team2_players)
-        for player in all_players:
+        # Додати нових гравців з початковим рейтингом (тільки тих, хто грав)
+        playing_players = set(team1_players + team2_players)
+        for player in playing_players:
             if player not in current_ratings:
                 current_ratings[player] = INITIAL_RATING
 
@@ -240,7 +258,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
             rating_headers = headers
 
         # Додати нових гравців до заголовків якщо потрібно
-        new_players = [player for player in all_players if player not in rating_headers]
+        new_players = [player for player in playing_players if player not in rating_headers]
         if new_players:
             rating_headers.extend(sorted(new_players))
             rating_sheet.update('1:1', [rating_headers])
@@ -271,7 +289,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
         new_ratings = current_ratings.copy()
         changes = []
 
-        # Оновити рейтинги гравців команди 1
+        # Оновити рейтинги ТІЛЬКИ гравців команди 1 (які грали)
         for player in team1_players:
             old_rating = new_ratings.get(player, INITIAL_RATING)
             games_played = get_player_games_count(player)
@@ -286,7 +304,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
             change = new_rating - old_rating
             changes.append(f"{player}: {old_rating}→{new_rating} ({change:+d}) [K={k_factor:.1f}]")
 
-        # Оновити рейтинги гравців команди 2
+        # Оновити рейтинги ТІЛЬКИ гравців команди 2 (які грали)
         for player in team2_players:
             old_rating = new_ratings.get(player, INITIAL_RATING)
             games_played = get_player_games_count(player)
@@ -310,11 +328,15 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
             if player_name in new_ratings:
                 row_to_add.append(new_ratings[player_name])
             else:
-                row_to_add.append(INITIAL_RATING)
+                # Якщо гравець не грав у цьому матчі, беремо його попередній рейтинг
+                if player_name in current_ratings:
+                    row_to_add.append(current_ratings[player_name])
+                else:
+                    row_to_add.append(INITIAL_RATING)
 
         # Додати рядок до таблиці Rating
         rating_sheet.append_row(row_to_add)
-        logging.info(f"Додано рядок до Rating для матчу {match_id}")
+        logging.info(f"Додано рядок до Rating для матчу {match_id} (оновлено тільки гравців які грали)")
 
         return changes
 
@@ -325,13 +347,12 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
 
 def stats(update, context):
     """Команда для перегляду статистики гравця"""
-
     try:
         if not context.args:
             update.message.reply_text("⚠️ Використання: /stats ІмяГравця")
             return
         if update.message.chat.type != 'private':
-            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.")
+            update.message.reply_text("⚠️ Ого, маєш гарні яйця, але таким краще не хвастатись при всіх, го в лс")
             return
 
         player_name = " ".join(context.args)
@@ -528,7 +549,7 @@ def delete(update, context):
     """Команда для видалення останнього матчу"""
     try:
         if update.message.chat.type == 'private':
-            update.message.reply_text("⚠️ Ця команда працює тільки в групових чатах.")
+            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.    ")
             return
 
         # Отримати всі рядки
@@ -584,10 +605,13 @@ def help_command(update, context):
 🏐 Команди волейбольного бота:
 
 /result Команда1 рахунок1 - рахунок2 Команда2
-   Приклад: /result Синіх 15 - 10 Червоних
+   Приклад: /result Сині 15 - 10 Червоні
 
 /stats ІмяГравця
    Приклад: /stats Олексій
+
+/matches ІмяГравця - історія матчів гравця
+   Приклад: /matches Олексій
 
 /leaderboard - показати топ гравців
 
@@ -599,6 +623,9 @@ def help_command(update, context):
 • Початковий рейтинг: 1500
 • Новачки мають високий K-фактор (швидше змінюється рейтинг)
 • Враховується сила суперника та різниця в рахунку
+• Рейтинг змінюється ТІЛЬКИ у гравців які фактично грали
+• Матчі зараховуються тільки тим, хто брав участь
+
 """
     update.message.reply_text(help_text)
 
@@ -610,12 +637,103 @@ if not bot_token:
 
 bot = Bot(token=bot_token)
 
+
+def matches_history(update, context):
+    """Команда для перегляду історії матчів гравця"""
+    try:
+        if not context.args:
+            update.message.reply_text("⚠️ Використання: /matches ІмяГравця")
+            return
+
+        player_name = " ".join(context.args)
+
+        # Отримуємо дані з таблиць
+        matches_sheet = client.open_by_url(
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
+        ).worksheet("Matches")
+
+        teams_sheet = client.open_by_url(
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
+        ).worksheet("Teams")
+
+        matches_rows = matches_sheet.get_all_values()
+        teams_rows = teams_sheet.get_all_values()
+
+        if len(matches_rows) < 2 or len(teams_rows) < 2:
+            update.message.reply_text("⚠️ Немає даних про матчі")
+            return
+
+        player_matches = []
+
+        # Знайти всі матчі гравця
+        for match_row in matches_rows[1:]:  # Пропускаємо заголовки
+            if len(match_row) >= 7:  # match_id, date, match_number, team1, team2, score1, score2
+                match_date = match_row[1]
+                team1 = match_row[3]
+                team2 = match_row[4]
+                score1 = match_row[5]
+                score2 = match_row[6]
+                winner = match_row[7] if len(match_row) > 7 else ""
+
+                # Знайти склади команд
+                player_team = None
+                for team_row in teams_rows[1:]:
+                    if len(team_row) >= 6 and team_row[0] == match_date:
+                        team1_players = [p.strip() for p in team_row[2].split(', ') if p.strip()]
+                        team2_players = [p.strip() for p in team_row[5].split(', ') if p.strip()]
+
+                        if player_name in team1_players:
+                            player_team = team1
+                            break
+                        elif player_name in team2_players:
+                            player_team = team2
+                            break
+
+                if player_team:
+                    result = "В" if winner == player_team else "П" if winner and winner != "Нічия" else "Н"
+                    player_matches.append({
+                        'date': match_date,
+                        'team': player_team,
+                        'opponent': team2 if player_team == team1 else team1,
+                        'score': f"{score1}-{score2}" if player_team == team1 else f"{score2}-{score1}",
+                        'result': result
+                    })
+
+        if not player_matches:
+            update.message.reply_text(f"⚠️ Гравець '{player_name}' не грав у жодному матчі")
+            return
+
+        # Статистика
+        wins = sum(1 for m in player_matches if m['result'] == 'В')
+        losses = sum(1 for m in player_matches if m['result'] == 'П')
+        draws = sum(1 for m in player_matches if m['result'] == 'Н')
+
+        message = f"🏐 Матчі гравця {player_name}:\n"
+        message += f"📊 Всього: {len(player_matches)} | В: {wins} | П: {losses} | Н: {draws}\n\n"
+
+        # Показати останні 5 матчів
+        recent_matches = player_matches[-5:]
+        for match in recent_matches:
+            result_emoji = "🏆" if match['result'] == 'В' else "😞" if match['result'] == 'П' else "🤝"
+            message += f"{result_emoji} {match['date']}: {match['team']} vs {match['opponent']} ({match['score']})\n"
+
+        if len(player_matches) > 5:
+            message += f"\n... та ще {len(player_matches) - 5} матчів"
+
+        update.message.reply_text(message)
+
+    except Exception as e:
+        logging.error(f"Помилка в команді matches: {e}")
+        update.message.reply_text(f"⚠️ Помилка: {e}")
+
+
 # Налаштування диспетчера
 dispatcher = Dispatcher(bot, None, workers=0)
 dispatcher.add_handler(CommandHandler("result", result))
 dispatcher.add_handler(CommandHandler("delete", delete))
 dispatcher.add_handler(CommandHandler("stats", stats))
 dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
+dispatcher.add_handler(CommandHandler("matches", matches_history))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
 
