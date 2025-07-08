@@ -4,11 +4,14 @@ import logging
 import gspread
 import uuid
 import math
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
+import io
 
 # Увімкнути логування
 logging.basicConfig(level=logging.INFO)
@@ -104,6 +107,95 @@ def get_current_ratings():
     except Exception as e:
         logging.error(f"Помилка при отриманні рейтингів: {e}")
         return {}
+
+def get_player_rating_history(player_name):
+    """Отримати історію рейтингу гравця"""
+    try:
+        rating_sheet = client.open_by_url(
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
+        ).worksheet("Rating")
+
+        all_rows = rating_sheet.get_all_values()
+        if len(all_rows) < 2:
+            return []
+
+        headers = all_rows[0]
+        data_rows = all_rows[1:]
+
+        # Знайти індекс стовпця гравця
+        player_index = None
+        for i, header in enumerate(headers):
+            if header.strip() == player_name:
+                player_index = i
+                break
+
+        if player_index is None:
+            return []
+
+        history = []
+        for row in data_rows:
+            if len(row) > max(1, player_index):
+                try:
+                    date_str = row[1]  # date column
+                    rating = int(float(row[player_index])) if row[player_index] else INITIAL_RATING
+
+                    # Перетворити дату у формат datetime
+                    match_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    history.append((match_date, rating))
+                except (ValueError, IndexError):
+                    continue
+
+        return history
+    except Exception as e:
+        logging.error(f"Помилка при отриманні історії рейтингу: {e}")
+        return []
+
+
+def create_rating_chart(player_name, history):
+    """Створити графік динаміки рейтингу"""
+    if not history:
+        return None
+
+    try:
+        # Налаштування для підтримки українських символів
+        plt.rcParams['font.family'] = 'DejaVu Sans'
+
+        dates, ratings = zip(*history)
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(dates, ratings, marker='o', linewidth=2, markersize=4, color='#2E86AB')
+
+        # Додати лінію початкового рейтингу
+        ax.axhline(y=INITIAL_RATING, color='red', linestyle='--', alpha=0.5,
+                   label=f'Початковий рейтинг ({INITIAL_RATING})')
+
+        # Налаштування осей
+        ax.set_xlabel('Дата', fontsize=12)
+        ax.set_ylabel('Рейтинг', fontsize=12)
+        ax.set_title(f'Динаміка рейтингу: {player_name}', fontsize=14, fontweight='bold')
+
+        # Форматування дат на осі X
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates) // 10)))
+        plt.xticks(rotation=45)
+
+        # Сітка
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+
+        # Покращити вигляд
+        plt.tight_layout()
+
+        # Зберегти у байт-буфер
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
+        buffer.seek(0)
+        plt.close()
+
+        return buffer
+    except Exception as e:
+        logging.error(f"Помилка створення графіка: {e}")
+        return None
 
 
 def calculate_expected_score(rating_a, rating_b):
@@ -346,7 +438,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
 
 
 def stats(update, context):
-    """Команда для перегляду статистики гравця"""
+    """Команда для перегляду статистики гравця з графіком"""
     try:
         if not context.args:
             update.message.reply_text("⚠️ Використання: /stats ІмяГравця")
@@ -387,6 +479,18 @@ def stats(update, context):
             message += f"\n💡 До повної стабілізації: {remaining_games} матчів"
 
         update.message.reply_text(message)
+
+        # Створити та відправити графік
+        if games_played > 0:
+            history = get_player_rating_history(player_name)
+            if history:
+                chart_buffer = create_rating_chart(player_name, history)
+                if chart_buffer:
+                    chart_buffer.seek(0)
+                    update.message.reply_photo(
+                        photo=chart_buffer,
+                        caption=f"📈 Динаміка рейтингу: {player_name}"
+                    )
 
     except Exception as e:
         logging.error(f"Помилка в команді stats: {e}")
@@ -606,9 +710,6 @@ def help_command(update, context):
 /stats ІмяГравця
    Приклад: /stats Олексій
 
-/matches ІмяГравця - історія матчів гравця
-   Приклад: /matches Олексій
-
 /leaderboard - показати топ гравців
 
 /delete - видалити останній матч (тільки сьогодні)
@@ -634,102 +735,12 @@ if not bot_token:
 bot = Bot(token=bot_token)
 
 
-def matches_history(update, context):
-    """Команда для перегляду історії матчів гравця"""
-    try:
-        if not context.args:
-            update.message.reply_text("⚠️ Використання: /matches ІмяГравця")
-            return
-
-        player_name = " ".join(context.args)
-
-        # Отримуємо дані з таблиць
-        matches_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Matches")
-
-        teams_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Teams")
-
-        matches_rows = matches_sheet.get_all_values()
-        teams_rows = teams_sheet.get_all_values()
-
-        if len(matches_rows) < 2 or len(teams_rows) < 2:
-            update.message.reply_text("⚠️ Немає даних про матчі")
-            return
-
-        player_matches = []
-
-        # Знайти всі матчі гравця
-        for match_row in matches_rows[1:]:  # Пропускаємо заголовки
-            if len(match_row) >= 7:  # match_id, date, match_number, team1, team2, score1, score2
-                match_date = match_row[1]
-                team1 = match_row[3]
-                team2 = match_row[4]
-                score1 = match_row[5]
-                score2 = match_row[6]
-                winner = match_row[7] if len(match_row) > 7 else ""
-
-                # Знайти склади команд
-                player_team = None
-                for team_row in teams_rows[1:]:
-                    if len(team_row) >= 6 and team_row[0] == match_date:
-                        team1_players = [p.strip() for p in team_row[2].split(', ') if p.strip()]
-                        team2_players = [p.strip() for p in team_row[5].split(', ') if p.strip()]
-
-                        if player_name in team1_players:
-                            player_team = team1
-                            break
-                        elif player_name in team2_players:
-                            player_team = team2
-                            break
-
-                if player_team:
-                    result = "В" if winner == player_team else "П" if winner and winner != "Нічия" else "Н"
-                    player_matches.append({
-                        'date': match_date,
-                        'team': player_team,
-                        'opponent': team2 if player_team == team1 else team1,
-                        'score': f"{score1}-{score2}" if player_team == team1 else f"{score2}-{score1}",
-                        'result': result
-                    })
-
-        if not player_matches:
-            update.message.reply_text(f"⚠️ Гравець '{player_name}' не грав у жодному матчі")
-            return
-
-        # Статистика
-        wins = sum(1 for m in player_matches if m['result'] == 'В')
-        losses = sum(1 for m in player_matches if m['result'] == 'П')
-        draws = sum(1 for m in player_matches if m['result'] == 'Н')
-
-        message = f"🏐 Матчі гравця {player_name}:\n"
-        message += f"📊 Всього: {len(player_matches)} | В: {wins} | П: {losses} | Н: {draws}\n\n"
-
-        # Показати останні 5 матчів
-        recent_matches = player_matches[-5:]
-        for match in recent_matches:
-            result_emoji = "🏆" if match['result'] == 'В' else "😞" if match['result'] == 'П' else "🤝"
-            message += f"{result_emoji} {match['date']}: {match['team']} vs {match['opponent']} ({match['score']})\n"
-
-        if len(player_matches) > 5:
-            message += f"\n... та ще {len(player_matches) - 5} матчів"
-
-        update.message.reply_text(message)
-
-    except Exception as e:
-        logging.error(f"Помилка в команді matches: {e}")
-        update.message.reply_text(f"⚠️ Помилка: {e}")
-
-
 # Налаштування диспетчера
 dispatcher = Dispatcher(bot, None, workers=0)
 dispatcher.add_handler(CommandHandler("result", result))
 dispatcher.add_handler(CommandHandler("delete", delete))
 dispatcher.add_handler(CommandHandler("stats", stats))
 dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
-dispatcher.add_handler(CommandHandler("matches", matches_history))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
 
