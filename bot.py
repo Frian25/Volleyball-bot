@@ -53,6 +53,8 @@ STABILIZATION_GAMES = 25
 HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
 
+def is_quota_exceeded_error(e):
+    return "Quota exceeded" in str(e) or "RESOURCE_EXHAUSTED" in str(e)
 
 def get_team_players(team_name, match_date):
     """Отримати список гравців команди на певну дату"""
@@ -514,7 +516,10 @@ def stats(update, context):
 
     except Exception as e:
         logging.error(f"Помилка в команді stats: {e}")
-        update.message.reply_text(f"⚠️ Помилка: {e}")
+        if is_quota_exceeded_error(e):
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
+        else:
+            update.message.reply_text(f"⚠️ Помилка: {e}")
 
 
 def leaderboard(update, context):
@@ -530,7 +535,7 @@ def leaderboard(update, context):
         sorted_players = sorted(current_ratings.items(), key=lambda x: x[1], reverse=True)
 
         message = "🏆 Топ гравців:\n\n"
-        for i, (player, rating) in enumerate(sorted_players[:10], 1):
+        for i, (player, rating) in enumerate(sorted_players[:5], 1):
             games = get_player_games_count(player)
             if i == 1:
                 message += f"🥇 {player}: {rating} ({games} ігор)\n"
@@ -545,7 +550,10 @@ def leaderboard(update, context):
 
     except Exception as e:
         logging.error(f"Помилка в команді leaderboard: {e}")
-        update.message.reply_text(f"⚠️ Помилка: {e}")
+        if is_quota_exceeded_error(e):
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
+        else:
+            update.message.reply_text(f"⚠️ Помилка: {e}")
 
 
 def result(update, context):
@@ -663,9 +671,11 @@ def result(update, context):
 
     except Exception as e:
         logging.error(f"Помилка в команді result: {e}")
-        update.message.reply_text(f"⚠️ Помилка: {e}\n"
-                                  f"Спробуйте формат: /result Команда1 рахунок1 - рахунок2 Команда2")
-
+        if is_quota_exceeded_error(e):
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
+        else:
+            update.message.reply_text(f"⚠️ Помилка: {e}\n"
+                                      f"Спробуйте формат: /result Команда1 рахунок1 - рахунок2 Команда2")
 
 def delete(update, context):
     """Команда для видалення останнього матчу"""
@@ -713,12 +723,14 @@ def delete(update, context):
 
         except Exception as e:
             logging.error(f"Помилка при видаленні з Rating: {e}")
-
-        update.message.reply_text("✅ Видалено останній матч з обох таблиць.")
+            update.message.reply_text("✅ Видалено останній матч з обох таблиць.")
 
     except Exception as e:
         logging.error(f"Помилка в команді delete: {e}")
-        update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
+        if is_quota_exceeded_error(e):
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
+        else:
+            update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
 
 
 def help_command(update, context):
