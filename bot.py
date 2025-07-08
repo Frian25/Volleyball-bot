@@ -152,7 +152,7 @@ def get_player_rating_history(player_name):
 
 
 def create_rating_chart(player_name, history):
-    """Створити графік динаміки рейтингу"""
+    """Створити графік динаміки рейтингу по матчах"""
     if not history:
         return None
 
@@ -160,24 +160,36 @@ def create_rating_chart(player_name, history):
         # Налаштування для підтримки українських символів
         plt.rcParams['font.family'] = 'DejaVu Sans'
 
+        # Створюємо послідовність матчів
+        matches = list(range(1, len(history) + 1))
         dates, ratings = zip(*history)
 
         fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(dates, ratings, marker='o', linewidth=2, markersize=4, color='#2E86AB')
+        ax.plot(matches, ratings, marker='o', linewidth=2, markersize=4, color='#2E86AB')
 
         # Додати лінію початкового рейтингу
         ax.axhline(y=INITIAL_RATING, color='red', linestyle='--', alpha=0.5,
                    label=f'Початковий рейтинг ({INITIAL_RATING})')
 
         # Налаштування осей
-        ax.set_xlabel('Дата', fontsize=12)
+        ax.set_xlabel('Матч №', fontsize=12)
         ax.set_ylabel('Рейтинг', fontsize=12)
         ax.set_title(f'Динаміка рейтингу: {player_name}', fontsize=14, fontweight='bold')
 
-        # Форматування дат на осі X
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
-        ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates) // 10)))
-        plt.xticks(rotation=45)
+        # Налаштування осі X для відображення номерів матчів
+        ax.set_xlim(0.5, len(matches) + 0.5)
+
+        # Встановлюємо мітки на осі X
+        if len(matches) <= 20:
+            # Якщо матчів мало, показуємо всі
+            ax.set_xticks(matches)
+        else:
+            # Якщо матчів багато, показуємо через інтервал
+            step = max(1, len(matches) // 10)
+            ticks = list(range(1, len(matches) + 1, step))
+            if ticks[-1] != len(matches):
+                ticks.append(len(matches))
+            ax.set_xticks(ticks)
 
         # Сітка
         ax.grid(True, alpha=0.3)
@@ -196,7 +208,6 @@ def create_rating_chart(player_name, history):
     except Exception as e:
         logging.error(f"Помилка створення графіка: {e}")
         return None
-
 
 def calculate_expected_score(rating_a, rating_b):
     """Розрахунок очікуваного результату (ELO формула)"""
