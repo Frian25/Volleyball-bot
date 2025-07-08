@@ -4,6 +4,7 @@ import logging
 import gspread
 import uuid
 import math
+import time
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
@@ -12,6 +13,14 @@ from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import io
+
+# Простий кеш для зчитаних даних
+cache = {
+    "ratings": None,
+    "ratings_time": 0,
+    "matches_rows": None,
+    "teams_rows": None
+}
 
 # Увімкнути логування
 logging.basicConfig(level=logging.INFO)
@@ -78,22 +87,25 @@ def get_team_players(team_name, match_date):
 
 
 def get_current_ratings():
-    """Отримати поточні рейтинги всіх гравців"""
+    """Отримати поточні рейтинги всіх гравців з кешем на 60 сек"""
     try:
+        now = time.time()
+        if cache["ratings"] and now - cache["ratings_time"] < 60:
+            return cache["ratings"]
+
         rating_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit"
         ).worksheet("Rating")
 
         all_rows = rating_sheet.get_all_values()
         if len(all_rows) < 2:
-            logging.info("Таблиця Rating порожня, повертаємо пустий словник")
             return {}
 
         headers = all_rows[0]
         last_row = all_rows[-1]
 
         ratings = {}
-        for i in range(2, len(headers)):  # Пропустити match_id та date
+        for i in range(2, len(headers)):
             if i < len(headers):
                 player_name = headers[i].strip()
                 if player_name:
@@ -102,6 +114,10 @@ def get_current_ratings():
                     except (ValueError, IndexError):
                         rating = INITIAL_RATING
                     ratings[player_name] = rating
+
+        # кешуємо
+        cache["ratings"] = ratings
+        cache["ratings_time"] = now
 
         return ratings
     except Exception as e:
@@ -265,45 +281,42 @@ def calculate_dynamic_k_factor(games_played, player_rating=None):
 
 
 def get_player_games_count(player_name):
-    """Отримати кількість зіграних матчів для гравця"""
+    """Отримати кількість зіграних матчів для гравця з кешем"""
     try:
-        # Отримуємо дані з таблиці Matches для точного підрахунку
-        matches_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Matches")
+        if not cache["matches_rows"] or not cache["teams_rows"]:
+            matches_sheet = client.open_by_url(
+                "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit"
+            ).worksheet("Matches")
 
-        teams_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Teams")
+            teams_sheet = client.open_by_url(
+                "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit"
+            ).worksheet("Teams")
 
-        matches_rows = matches_sheet.get_all_values()
-        teams_rows = teams_sheet.get_all_values()
+            cache["matches_rows"] = matches_sheet.get_all_values()
+            cache["teams_rows"] = teams_sheet.get_all_values()
+
+        matches_rows = cache["matches_rows"]
+        teams_rows = cache["teams_rows"]
 
         if len(matches_rows) < 2 or len(teams_rows) < 2:
             return 0
 
         games_count = 0
 
-        # Для кожного матчу перевіряємо чи брав участь гравець
-        for match_row in matches_rows[1:]:  # Пропускаємо заголовки
-            if len(match_row) >= 2:  # match_id, date
+        for match_row in matches_rows[1:]:
+            if len(match_row) >= 2:
                 match_date = match_row[1]
-
-                # Шукаємо склади команд на цю дату
                 for team_row in teams_rows[1:]:
                     if len(team_row) >= 6 and team_row[0] == match_date:
-                        # Перевіряємо team_1_players та team_2_players
                         team1_players = team_row[2].split(', ') if team_row[2] else []
                         team2_players = team_row[5].split(', ') if len(team_row) > 5 and team_row[5] else []
 
-                        # Очищаємо імена від пробілів
                         team1_players = [p.strip() for p in team1_players if p.strip()]
                         team2_players = [p.strip() for p in team2_players if p.strip()]
 
-                        # Якщо гравець був у будь-якій команді в цьому матчі
                         if player_name in team1_players or player_name in team2_players:
                             games_count += 1
-                            break  # Знайшли участь у цьому матчі, переходимо до наступного
+                            break
 
         return games_count
     except Exception as e:
