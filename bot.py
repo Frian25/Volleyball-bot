@@ -5,6 +5,7 @@ import gspread
 import uuid
 import math
 import matplotlib.pyplot as plt
+from datetime import datetime, date
 import matplotlib.dates as mdates
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
@@ -43,6 +44,52 @@ MIN_K_FACTOR = 15
 STABILIZATION_GAMES = 25
 HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
+
+
+def apply_rating_decay(current_ratings):
+    """Застосувати зменшення рейтингу за неактивність"""
+    try:
+        # Отримуємо дані з таблиці Rating для останньої активності
+        rating_sheet = client.open_by_url(
+            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
+        ).worksheet("Rating")
+
+        all_rows = rating_sheet.get_all_values()
+        if len(all_rows) < 2:
+            return current_ratings
+
+        # Знаходимо останню дату активності для кожного гравця
+        headers = all_rows[0]
+        today = date.today()
+
+        for i, player_name in enumerate(headers[2:], 2):  # Пропускаємо match_id та date
+            if not player_name.strip():
+                continue
+
+            # Знаходимо останню дату коли гравець грав
+            last_activity_date = None
+            for row in reversed(all_rows[1:]):
+                if len(row) > i and row[i] and int(float(row[i])) != current_ratings.get(player_name, INITIAL_RATING):
+                    try:
+                        last_activity_date = datetime.strptime(row[1], "%Y-%m-%d").date()
+                        break
+                    except:
+                        continue
+
+            if last_activity_date:
+                days_inactive = (today - last_activity_date).days
+
+                if days_inactive >= 14:  # Після 30 днів неактивності
+                    decay_periods = (days_inactive - 14) // 7  # Щотижня
+                    if decay_periods > 0:
+                        current_rating = current_ratings.get(player_name, INITIAL_RATING)
+                        penalty = int(current_rating * 0.04 * decay_periods)
+                        current_ratings[player_name] = max(current_rating - penalty, 800)
+
+        return current_ratings
+    except Exception as e:
+        logging.error(f"Помилка застосування decay: {e}")
+        return current_ratings
 
 
 def get_team_players(team_name, match_date):
@@ -103,7 +150,7 @@ def get_current_ratings():
                         rating = INITIAL_RATING
                     ratings[player_name] = rating
 
-        return ratings
+        return apply_rating_decay(ratings)
     except Exception as e:
         logging.error(f"Помилка при отриманні рейтингів: {e}")
         return {}
@@ -166,10 +213,6 @@ def create_rating_chart(player_name, history):
 
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.plot(matches, ratings, marker='o', linewidth=2, markersize=4, color='#2E86AB')
-
-        # Додати лінію початкового рейтингу
-        ax.axhline(y=INITIAL_RATING, color='red', linestyle='--', alpha=0.5,
-                   label=f'Початковий рейтинг ({INITIAL_RATING})')
 
         # Налаштування осей
         ax.set_xlabel('Матч №', fontsize=12)
@@ -344,6 +387,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
 
         # Отримати поточні рейтинги
         current_ratings = get_current_ratings()
+        current_ratings = apply_rating_decay(current_ratings)
 
         # Додати нових гравців з початковим рейтингом (тільки тих, хто грав)
         playing_players = set(team1_players + team2_players)
@@ -460,6 +504,7 @@ def stats(update, context):
 
         player_name = " ".join(context.args)
         current_ratings = get_current_ratings()
+        current_ratings = apply_rating_decay(current_ratings)
 
         if player_name not in current_ratings:
             update.message.reply_text(f"⚠️ Гравець '{player_name}' не знайдений")
@@ -512,6 +557,7 @@ def leaderboard(update, context):
     """Команда для перегляду топ гравців"""
     try:
         current_ratings = get_current_ratings()
+        current_ratings = apply_rating_decay(current_ratings)
 
         if not current_ratings:
             update.message.reply_text("⚠️ Немає даних про рейтинги")
@@ -524,8 +570,10 @@ def leaderboard(update, context):
         for i, (player, rating) in enumerate(sorted_players[:10], 1):
             games = get_player_games_count(player)
             if i == 1:
-                message += f"👑 {player}: {rating} ({games} ігор)\n"
-            elif i <= 3:
+                message += f"🥇 {player}: {rating} ({games} ігор)\n"
+            elif i == 2:
+                message += f"🥈 {player}: {rating} ({games} ігор)\n"
+            elif i == 3:
                 message += f"🥉 {player}: {rating} ({games} ігор)\n"
             else:
                 message += f"{i}. {player}: {rating} ({games} ігор)\n"
