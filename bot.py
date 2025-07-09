@@ -58,8 +58,6 @@ def process_updates():
     while True:
         dispatcher.process_update(update_queue.get())
 
-threading.Thread(target=process_updates, daemon=True).start()
-
 def is_quota_exceeded_error(e):
     return "Quota exceeded" in str(e) or "RESOURCE_EXHAUSTED" in str(e)
 
