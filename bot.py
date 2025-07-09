@@ -56,7 +56,13 @@ HIGH_RATING_K_MULTIPLIER = 0.8
 
 def process_updates():
     while True:
-        dispatcher.process_update(update_queue.get())
+        try:
+            update = update_queue.get()
+            logging.info(f"Processing update: {update}")
+            dispatcher.process_update(update)
+            logging.info("Update processed successfully")
+        except Exception as e:
+            logging.error(f"Error processing update: {e}", exc_info=True)
 
 def is_quota_exceeded_error(e):
     return "Quota exceeded" in str(e) or "RESOURCE_EXHAUSTED" in str(e)
@@ -792,16 +798,20 @@ threading.Thread(target=process_updates, daemon=True).start()
 def webhook():
     try:
         json_data = request.get_json()
-        logging.info(f"Webhook data: {json.dumps(json_data, indent=2)}")
+        logging.info(f"Webhook received: {json.dumps(json_data, indent=2)}")
+
         if not json_data:
+            logging.warning("No JSON data received")
             return 'No data', 400
 
         update = Update.de_json(json_data, bot)
+        logging.info(f"Update created, adding to queue. Queue size: {update_queue.qsize()}")
         update_queue.put(update)
 
+        logging.info("Update added to queue successfully")
         return 'OK'
     except Exception as e:
-        logging.error(f"Помилка webhook: {e}")
+        logging.error(f"Webhook error: {e}", exc_info=True)
         return 'ERROR', 500
 
 
@@ -809,6 +819,14 @@ def webhook():
 @app.route('/', methods=['GET'])
 def health():
     return 'Volleyball Rating Bot is running! 🏐'
+
+@app.route('/debug', methods=['GET'])
+def debug():
+    return {
+        'queue_size': update_queue.qsize(),
+        'bot_info': bot.get_me().to_dict(),
+        'webhook_info': bot.get_webhook_info().to_dict()
+    }
 
 
 @app.route('/health', methods=['GET'])
