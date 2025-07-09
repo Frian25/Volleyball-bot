@@ -6,13 +6,14 @@ import uuid
 import math
 import time
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+from queue import Queue
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import io
+import threading
 
 # Простий кеш для зчитаних даних
 cache = {
@@ -52,6 +53,12 @@ MIN_K_FACTOR = 15
 STABILIZATION_GAMES = 25
 HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
+
+def process_updates():
+    while True:
+        dispatcher.process_update(update_queue.get())
+
+threading.Thread(target=process_updates, daemon=True).start()
 
 def is_quota_exceeded_error(e):
     return "Quota exceeded" in str(e) or "RESOURCE_EXHAUSTED" in str(e)
@@ -770,7 +777,8 @@ bot = Bot(token=bot_token)
 
 
 # Налаштування диспетчера
-dispatcher = Dispatcher(bot, None, workers=0)
+update_queue = Queue()
+dispatcher = Dispatcher(bot, update_queue, workers=4)
 dispatcher.add_handler(CommandHandler("result", result))
 dispatcher.add_handler(CommandHandler("delete", delete))
 dispatcher.add_handler(CommandHandler("stats", stats))
@@ -784,11 +792,12 @@ dispatcher.add_handler(CommandHandler("start", help_command))
 def webhook():
     try:
         json_data = request.get_json()
+        logging.info(f"Webhook data: {json.dumps(json_data, indent=2)}")
         if not json_data:
             return 'No data', 400
 
         update = Update.de_json(json_data, bot)
-        dispatcher.process_update(update)
+        update_queue.put(update)
 
         return 'OK'
     except Exception as e:
