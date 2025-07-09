@@ -60,16 +60,16 @@ def timeout(seconds):
 
 
 def safe_sheets_operation(operation, *args, **kwargs):
-    """Безпечне виконання операцій з Google Sheets з timeout"""
-    try:
-        with timeout(SHEETS_TIMEOUT):
-            return operation(*args, **kwargs)
-    except TimeoutError:
-        logger.error(f"Timeout при виконанні операції з Google Sheets")
-        raise Exception("Операція зайняла занадто багато часу")
-    except Exception as e:
-        logger.error(f"Помилка при виконанні операції з Google Sheets: {e}")
-        raise
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with timeout(SHEETS_TIMEOUT):
+                return operation(*args, **kwargs)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            logger.warning(f"Спроба {attempt + 1} невдала: {e}")
+            time.sleep(2 ** attempt)  # Exponential backoff
 
 
 # Отримуємо JSON з ключами з середовища
@@ -862,7 +862,7 @@ bot = Bot(token=bot_token)
 
 
 # Налаштування диспетчера
-update_queue = Queue()
+update_queue = Queue(maxsize=100)
 dispatcher = Dispatcher(bot, update_queue, workers=4)
 dispatcher.add_handler(CommandHandler("result", result))
 dispatcher.add_handler(CommandHandler("delete", delete))
