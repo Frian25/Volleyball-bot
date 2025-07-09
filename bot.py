@@ -786,6 +786,8 @@ dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
 
+threading.Thread(target=process_updates, daemon=True).start()
+
 
 # Webhook endpoint
 @app.route(f'/{bot_token}', methods=['POST'])
