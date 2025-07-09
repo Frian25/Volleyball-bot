@@ -6,7 +6,7 @@ import uuid
 import math
 import time
 import matplotlib.pyplot as plt
-from queue import Queue
+from queue import Queue, Empty
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request
@@ -14,6 +14,9 @@ from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import io
 import threading
+import signal
+import sys
+from contextlib import contextmanager
 
 # Простий кеш для зчитаних даних
 cache = {
@@ -24,13 +27,58 @@ cache = {
 }
 
 # Увімкнути логування
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Flask додаток
 app = Flask(__name__)
 
+# Timeout для операцій з Google Sheets
+SHEETS_TIMEOUT = 30
+
+
+@contextmanager
+def timeout(seconds):
+    """Context manager для обмеження часу виконання операцій"""
+
+    def signal_handler(signum, frame):
+        raise TimeoutError(f"Операція перевищила ліміт часу: {seconds} секунд")
+
+    # Встановити сигнал тільки на Unix системах
+    if hasattr(signal, 'SIGALRM'):
+        signal.signal(signal.SIGALRM, signal_handler)
+        signal.alarm(seconds)
+
+    try:
+        yield
+    finally:
+        if hasattr(signal, 'SIGALRM'):
+            signal.alarm(0)
+
+
+def safe_sheets_operation(operation, *args, **kwargs):
+    """Безпечне виконання операцій з Google Sheets з timeout"""
+    try:
+        with timeout(SHEETS_TIMEOUT):
+            return operation(*args, **kwargs)
+    except TimeoutError:
+        logger.error(f"Timeout при виконанні операції з Google Sheets")
+        raise Exception("Операція зайняла занадто багато часу")
+    except Exception as e:
+        logger.error(f"Помилка при виконанні операції з Google Sheets: {e}")
+        raise
+
+
 # Отримуємо JSON з ключами з середовища
-creds_dict = json.loads(os.environ["CREDS_JSON"])
+try:
+    creds_dict = json.loads(os.environ["CREDS_JSON"])
+    logger.info("Credentials успішно завантажено")
+except Exception as e:
+    logger.error(f"Помилка завантаження credentials: {e}")
+    sys.exit(1)
 
 # Права доступу до Google Sheets API
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -39,11 +87,13 @@ client = gspread.authorize(creds)
 
 # Отримуємо таблицю
 try:
-    sheet = client.open_by_url(
+    sheet = safe_sheets_operation(
+        client.open_by_url,
         "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
     ).worksheet("Matches")
+    logger.info("Підключення до Google Sheets успішне")
 except Exception as e:
-    logging.error(f"Помилка підключення до таблиці: {e}")
+    logger.error(f"Помилка підключення до таблиці: {e}")
     sheet = None
 
 # Константи для рейтингової системи
@@ -55,17 +105,48 @@ HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
 
 def process_updates():
+    """Оброблення updates з покращеною обробкою помилок"""
+    logger.info("Запуск потоку обробки updates")
+
     while True:
         try:
-            update = update_queue.get()
-            logging.info(f"Processing update: {update}")
-            dispatcher.process_update(update)
-            logging.info("Update processed successfully")
+            # Отримати update з timeout
+            update = update_queue.get(timeout=30)
+            logger.info(f"Обробка update: {update.update_id}")
+
+            # Обробити update з timeout
+            with timeout(60):  # 60 секунд на обробку одного update
+                dispatcher.process_update(update)
+
+            logger.info(f"Update {update.update_id} оброблено успішно")
+
+        except Empty:
+            # Якщо черга порожня, продовжуємо
+            logger.debug("Черга updates порожня, очікуємо...")
+            continue
+
+        except TimeoutError:
+            logger.error("Timeout при обробці update")
+            continue
+
         except Exception as e:
-            logging.error(f"Error processing update: {e}", exc_info=True)
+            logger.error(f"Помилка при обробці update: {e}", exc_info=True)
+            continue
+
+        finally:
+            # Завжди позначити завдання як виконане
+            try:
+                update_queue.task_done()
+            except:
+                pass
+
 
 def is_quota_exceeded_error(e):
-    return "Quota exceeded" in str(e) or "RESOURCE_EXHAUSTED" in str(e)
+    error_str = str(e).lower()
+    return any(keyword in error_str for keyword in [
+        "quota exceeded", "resource_exhausted", "rate limit",
+        "too many requests", "service unavailable"
+    ])
 
 def get_team_players(team_name, match_date):
     """Отримати список гравців команди на певну дату"""
