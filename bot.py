@@ -106,40 +106,38 @@ HIGH_RATING_K_MULTIPLIER = 0.8
 
 def process_updates():
     """Оброблення updates з покращеною обробкою помилок"""
-    logger.info("Запуск потоку обробки updates")
+    logging.info("🟢 Запуск потоку обробки updates")
 
     while True:
         try:
             # Отримати update з timeout
             update = update_queue.get(timeout=30)
-            logger.info(f"Обробка update: {update.update_id}")
+            logging.info(f"📥 Отримано update: {update.update_id}")
 
-            # Обробити update з timeout
-            with timeout(60):  # 60 секунд на обробку одного update
+            # Обробити update з таймаутом
+            with timeout(60):
                 dispatcher.process_update(update)
 
-            logger.info(f"Update {update.update_id} оброблено успішно")
+            logging.info(f"✅ Update {update.update_id} оброблено успішно")
 
         except Empty:
-            # Якщо черга порожня, продовжуємо
-            logger.debug("Черга updates порожня, очікуємо...")
+            # Якщо черга порожня
+            logging.debug("⏳ Черга порожня, чекаємо на нові update-и...")
             continue
 
         except TimeoutError:
-            logger.error("Timeout при обробці update")
+            logging.error("⛔ Таймаут при обробці update")
             continue
 
         except Exception as e:
-            logger.error(f"Помилка при обробці update: {e}", exc_info=True)
+            logging.error(f"❌ Помилка при обробці update: {e}", exc_info=True)
             continue
 
         finally:
-            # Завжди позначити завдання як виконане
             try:
                 update_queue.task_done()
-            except:
+            except Exception:
                 pass
-
 
 def is_quota_exceeded_error(e):
     error_str = str(e).lower()
@@ -913,7 +911,18 @@ def debug():
 @app.route('/health', methods=['GET'])
 def health_check():
     return {'status': 'healthy', 'service': 'volleyball-rating-bot'}
+    
+@contextmanager
+def timeout(seconds):
+    def handler(signum, frame):
+        raise TimeoutError("Timed out!")
 
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
 
 # Налаштування webhook при запуску
 def setup_webhook():
