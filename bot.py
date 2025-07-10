@@ -15,6 +15,8 @@ import io
 import signal
 import sys
 from contextlib import contextmanager
+import threading
+import requests
 
 # Простий кеш для зчитаних даних
 cache = {
@@ -101,6 +103,38 @@ MIN_K_FACTOR = 15
 STABILIZATION_GAMES = 25
 HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
+
+# Keep-alive функціонал
+KEEP_ALIVE_INTERVAL = 600  # 10 хвилин (600 секунд)
+keep_alive_active = True
+
+
+def keep_alive_ping():
+    """Функція для підтримки активності сервера"""
+    while keep_alive_active:
+        try:
+            # Отримуємо URL нашого сервера
+            app_url = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+            if app_url:
+                ping_url = f"https://{app_url}/health"
+                response = requests.get(ping_url, timeout=30)
+                if response.status_code == 200:
+                    logging.info("Keep-alive ping successful")
+                else:
+                    logging.warning(f"Keep-alive ping returned status: {response.status_code}")
+            else:
+                logging.warning("RENDER_EXTERNAL_HOSTNAME не знайдено")
+        except Exception as e:
+            logging.error(f"Keep-alive ping failed: {e}")
+
+        time.sleep(KEEP_ALIVE_INTERVAL)
+
+
+def start_keep_alive():
+    """Запуск keep-alive потоку"""
+    keep_alive_thread = threading.Thread(target=keep_alive_ping, daemon=True)
+    keep_alive_thread.start()
+    logging.info("Keep-alive thread started")
 
 def process_updates():
     """Оброблення updates з покращеною обробкою помилок"""
@@ -914,13 +948,17 @@ def debug():
 @app.route('/health', methods=['GET'])
 def health_check():
     return {'status': 'healthy', 'service': 'volleyball-rating-bot'}
-    
+
 # Налаштування webhook при запуску
 def setup_webhook():
     try:
         webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{bot_token}"
         bot.set_webhook(url=webhook_url)
         logging.info(f"Webhook встановлено на: {webhook_url}")
+
+        # Запуск keep-alive
+        start_keep_alive()
+
     except Exception as e:
         logging.error(f"Помилка встановлення webhook: {e}")
 
