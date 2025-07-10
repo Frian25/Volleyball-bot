@@ -6,14 +6,12 @@ import uuid
 import math
 import time
 import matplotlib.pyplot as plt
-from queue import Queue, Empty
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import io
-import threading
 import signal
 import sys
 from contextlib import contextmanager
@@ -860,8 +858,7 @@ bot = Bot(token=bot_token)
 
 
 # Налаштування диспетчера
-update_queue = Queue(maxsize=100)
-dispatcher = Dispatcher(bot, update_queue, workers=4)
+dispatcher = Dispatcher(bot, None, workers=4)
 dispatcher.add_handler(CommandHandler("result", result))
 dispatcher.add_handler(CommandHandler("delete", delete))
 dispatcher.add_handler(CommandHandler("stats", stats))
@@ -869,7 +866,6 @@ dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
 
-threading.Thread(target=process_updates, daemon=True).start()
 
 
 # Webhook endpoint
@@ -884,11 +880,18 @@ def webhook():
             return 'No data', 400
 
         update = Update.de_json(json_data, bot)
-        logging.info(f"Update created, adding to queue. Queue size: {update_queue.qsize()}")
-        update_queue.put(update)
+        logging.info(f"📥 Отримано update: {update.update_id}")
 
-        logging.info("Update added to queue successfully")
+        # Обробити update одразу
+        with timeout(60):
+            dispatcher.process_update(update)
+
+        logging.info(f"✅ Update {update.update_id} оброблено успішно")
+
         return 'OK'
+    except TimeoutError:
+        logging.error("⛔ Таймаут при обробці update")
+        return 'TIMEOUT', 504
     except Exception as e:
         logging.error(f"Webhook error: {e}", exc_info=True)
         return 'ERROR', 500
@@ -912,18 +915,6 @@ def debug():
 def health_check():
     return {'status': 'healthy', 'service': 'volleyball-rating-bot'}
     
-@contextmanager
-def timeout(seconds):
-    def handler(signum, frame):
-        raise TimeoutError("Timed out!")
-
-    signal.signal(signal.SIGALRM, handler)
-    signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-
 # Налаштування webhook при запуску
 def setup_webhook():
     try:
