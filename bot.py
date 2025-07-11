@@ -105,7 +105,7 @@ HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
 
 # Keep-alive функціонал
-KEEP_ALIVE_INTERVAL = 540  # 9 хвилин
+KEEP_ALIVE_INTERVAL = 60  # 9 хвилин
 keep_alive_active = True
 
 
