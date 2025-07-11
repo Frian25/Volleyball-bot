@@ -10,7 +10,7 @@ from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request
 from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
+from telegram.ext import Dispatcher, CommandHandler
 import io
 import signal
 import sys
@@ -113,28 +113,29 @@ def keep_alive_ping():
     """Функція для підтримки активності сервера"""
     while keep_alive_active:
         try:
-            # Отримуємо URL нашого сервера
-            app_url = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-            if app_url:
-                ping_url = f"https://{app_url}/health"
+            # Спробувати різні варіанти URL
+            hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME') or os.environ.get('EXTERNAL_URL')
+
+            if hostname:
+                # Якщо hostname не містить https://, додати його
+                if not hostname.startswith('http'):
+                    ping_url = f"https://{hostname}/health"
+                else:
+                    ping_url = f"{hostname}/health"
+
                 headers = {
                     'User-Agent': 'VolleyballBot-KeepAlive/1.0',
                     'Accept': 'application/json'
                 }
+
                 response = requests.get(ping_url, timeout=10, headers=headers)
                 if response.status_code == 200:
                     logging.info(f"Keep-alive ping successful at {datetime.now()}")
                 else:
                     logging.warning(f"Keep-alive ping returned status: {response.status_code}")
             else:
-                # Fallback - спробувати отримати URL з іншої змінної
-                external_url = os.environ.get('EXTERNAL_URL')
-                if external_url:
-                    ping_url = f"{external_url}/health"
-                    response = requests.get(ping_url, timeout=10)
-                    logging.info(f"Keep-alive ping successful (fallback) at {datetime.now()}")
-                else:
-                    logging.warning("Жодна змінна URL не знайдена")
+                logging.error("Не вдалося отримати hostname для keep-alive")
+
         except Exception as e:
             logging.error(f"Keep-alive ping failed: {e}")
 
@@ -924,7 +925,8 @@ def health_check():
         'status': 'healthy',
         'service': 'volleyball-rating-bot',
         'timestamp': datetime.now().isoformat(),
-        'uptime': time.time()
+        'uptime': time.time(),
+        'sheets_connected': sheet is not None
     }
 
 # Налаштування webhook при запуску
@@ -945,7 +947,7 @@ def setup_webhook():
 
         # Запуск keep-alive
         start_keep_alive()
-        logging.info("Keep-alive запущено")
+        logging.info(f"Keep-alive налаштовано з інтервалом {KEEP_ALIVE_INTERVAL} секунд")
 
     except Exception as e:
         logging.error(f"Помилка встановлення webhook: {e}")
