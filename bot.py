@@ -105,7 +105,7 @@ HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
 
 # Keep-alive функціонал
-KEEP_ALIVE_INTERVAL = 600  # 10 хвилин (600 секунд)
+KEEP_ALIVE_INTERVAL = 540  # 9 хвилин
 keep_alive_active = True
 
 
@@ -117,13 +117,24 @@ def keep_alive_ping():
             app_url = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
             if app_url:
                 ping_url = f"https://{app_url}/health"
-                response = requests.get(ping_url, timeout=30)
+                headers = {
+                    'User-Agent': 'VolleyballBot-KeepAlive/1.0',
+                    'Accept': 'application/json'
+                }
+                response = requests.get(ping_url, timeout=10, headers=headers)
                 if response.status_code == 200:
-                    logging.info("Keep-alive ping successful")
+                    logging.info(f"Keep-alive ping successful at {datetime.now()}")
                 else:
                     logging.warning(f"Keep-alive ping returned status: {response.status_code}")
             else:
-                logging.warning("RENDER_EXTERNAL_HOSTNAME не знайдено")
+                # Fallback - спробувати отримати URL з іншої змінної
+                external_url = os.environ.get('EXTERNAL_URL')
+                if external_url:
+                    ping_url = f"{external_url}/health"
+                    response = requests.get(ping_url, timeout=10)
+                    logging.info(f"Keep-alive ping successful (fallback) at {datetime.now()}")
+                else:
+                    logging.warning("Жодна змінна URL не знайдена")
         except Exception as e:
             logging.error(f"Keep-alive ping failed: {e}")
 
@@ -136,40 +147,6 @@ def start_keep_alive():
     keep_alive_thread.start()
     logging.info("Keep-alive thread started")
 
-def process_updates():
-    """Оброблення updates з покращеною обробкою помилок"""
-    logging.info("🟢 Запуск потоку обробки updates")
-
-    while True:
-        try:
-            # Отримати update з timeout
-            update = update_queue.get(timeout=30)
-            logging.info(f"📥 Отримано update: {update.update_id}")
-
-            # Обробити update з таймаутом
-            with timeout(60):
-                dispatcher.process_update(update)
-
-            logging.info(f"✅ Update {update.update_id} оброблено успішно")
-
-        except Empty:
-            # Якщо черга порожня
-            logging.debug("⏳ Черга порожня, чекаємо на нові update-и...")
-            continue
-
-        except TimeoutError:
-            logging.error("⛔ Таймаут при обробці update")
-            continue
-
-        except Exception as e:
-            logging.error(f"❌ Помилка при обробці update: {e}", exc_info=True)
-            continue
-
-        finally:
-            try:
-                update_queue.task_done()
-            except Exception:
-                pass
 
 def is_quota_exceeded_error(e):
     error_str = str(e).lower()
@@ -929,6 +906,10 @@ def webhook():
     except Exception as e:
         logging.error(f"Webhook error: {e}", exc_info=True)
         return 'ERROR', 500
+        # Додайте цей рядок для кращої діагностики
+        if hasattr(e, 'response'):
+            logging.error(f"HTTP Response: {e.response.text if e.response else 'No response'}")
+        return 'ERROR', 500
 
 
 # Health check endpoint
@@ -936,28 +917,35 @@ def webhook():
 def health():
     return 'Volleyball Rating Bot is running! 🏐'
 
-@app.route('/debug', methods=['GET'])
-def debug():
-    return {
-        'queue_size': update_queue.qsize(),
-        'bot_info': bot.get_me().to_dict(),
-        'webhook_info': bot.get_webhook_info().to_dict()
-    }
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return {'status': 'healthy', 'service': 'volleyball-rating-bot'}
+    return {
+        'status': 'healthy',
+        'service': 'volleyball-rating-bot',
+        'timestamp': datetime.now().isoformat(),
+        'uptime': time.time()
+    }
 
 # Налаштування webhook при запуску
 def setup_webhook():
     try:
-        webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{bot_token}"
+        hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+        if not hostname:
+            logging.error("RENDER_EXTERNAL_HOSTNAME не встановлено!")
+            return
+
+        webhook_url = f"https://{hostname}/{bot_token}"
         bot.set_webhook(url=webhook_url)
         logging.info(f"Webhook встановлено на: {webhook_url}")
 
+        # Перевірити чи webhook встановлено
+        webhook_info = bot.get_webhook_info()
+        logging.info(f"Webhook info: {webhook_info}")
+
         # Запуск keep-alive
         start_keep_alive()
+        logging.info("Keep-alive запущено")
 
     except Exception as e:
         logging.error(f"Помилка встановлення webhook: {e}")
