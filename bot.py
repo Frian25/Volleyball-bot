@@ -12,18 +12,15 @@ from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler
 import io
-import signal
-import sys
-from contextlib import contextmanager
-import threading
-import requests
 
 # Простий кеш для зчитаних даних
 cache = {
     "ratings": None,
     "ratings_time": 0,
     "matches_rows": None,
-    "teams_rows": None
+    "matches_time": 0,
+    "teams_rows": None,
+    "teams_time": 0,
 }
 
 # Увімкнути логування
@@ -36,41 +33,6 @@ logger = logging.getLogger(__name__)
 # Flask додаток
 app = Flask(__name__)
 
-# Timeout для операцій з Google Sheets
-SHEETS_TIMEOUT = 30
-
-
-@contextmanager
-def timeout(seconds):
-    """Context manager для обмеження часу виконання операцій"""
-
-    def signal_handler(signum, frame):
-        raise TimeoutError(f"Операція перевищила ліміт часу: {seconds} секунд")
-
-    # Встановити сигнал тільки на Unix системах
-    if hasattr(signal, 'SIGALRM'):
-        signal.signal(signal.SIGALRM, signal_handler)
-        signal.alarm(seconds)
-
-    try:
-        yield
-    finally:
-        if hasattr(signal, 'SIGALRM'):
-            signal.alarm(0)
-
-
-def safe_sheets_operation(operation, *args, **kwargs):
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            with timeout(SHEETS_TIMEOUT):
-                return operation(*args, **kwargs)
-        except Exception as e:
-            if attempt == max_retries - 1:
-                raise
-            logger.warning(f"Спроба {attempt + 1} невдала: {e}")
-            time.sleep(2 ** attempt)  # Exponential backoff
-
 
 # Отримуємо JSON з ключами з середовища
 try:
@@ -78,7 +40,7 @@ try:
     logger.info("Credentials успішно завантажено")
 except Exception as e:
     logger.error(f"Помилка завантаження credentials: {e}")
-    sys.exit(1)
+    raise SystemExit("❌ Не вдалося завантажити credentials з середовища")
 
 # Права доступу до Google Sheets API
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -87,14 +49,14 @@ client = gspread.authorize(creds)
 
 # Отримуємо таблицю
 try:
-    sheet = safe_sheets_operation(
-        client.open_by_url,
-        "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-    ).worksheet("Matches")
+    spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250")
+    rating_sheet = spreadsheet.worksheet("Rating")
+    teams_sheet = spreadsheet.worksheet("Teams")
+    match_sheet = spreadsheet.worksheet("Matches")
     logger.info("Підключення до Google Sheets успішне")
 except Exception as e:
     logger.error(f"Помилка підключення до таблиці: {e}")
-    sheet = None
+    spreadsheet = None
 
 # Константи для рейтингової системи
 INITIAL_RATING = 1500
@@ -103,50 +65,6 @@ MIN_K_FACTOR = 15
 STABILIZATION_GAMES = 25
 HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
-
-# Keep-alive функціонал
-KEEP_ALIVE_INTERVAL = 60  # 9 хвилин
-keep_alive_active = True
-
-
-def keep_alive_ping():
-    """Функція для підтримки активності сервера"""
-    while keep_alive_active:
-        try:
-            # Спробувати різні варіанти URL
-            hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME') or os.environ.get('EXTERNAL_URL')
-
-            if hostname:
-                # Якщо hostname не містить https://, додати його
-                if not hostname.startswith('http'):
-                    ping_url = f"https://{hostname}/health"
-                else:
-                    ping_url = f"{hostname}/health"
-
-                headers = {
-                    'User-Agent': 'VolleyballBot-KeepAlive/1.0',
-                    'Accept': 'application/json'
-                }
-
-                response = requests.get(ping_url, timeout=10, headers=headers)
-                if response.status_code == 200:
-                    logging.info(f"Keep-alive ping successful at {datetime.now()}")
-                else:
-                    logging.warning(f"Keep-alive ping returned status: {response.status_code}")
-            else:
-                logging.error("Не вдалося отримати hostname для keep-alive")
-
-        except Exception as e:
-            logging.error(f"Keep-alive ping failed: {e}")
-
-        time.sleep(KEEP_ALIVE_INTERVAL)
-
-
-def start_keep_alive():
-    """Запуск keep-alive потоку"""
-    keep_alive_thread = threading.Thread(target=keep_alive_ping, daemon=True)
-    keep_alive_thread.start()
-    logging.info("Keep-alive thread started")
 
 
 def is_quota_exceeded_error(e):
@@ -159,9 +77,6 @@ def is_quota_exceeded_error(e):
 def get_team_players(team_name, match_date):
     """Отримати список гравців команди на певну дату"""
     try:
-        teams_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Teams")
 
         all_rows = teams_sheet.get_all_values()
         if len(all_rows) < 2:
@@ -195,10 +110,6 @@ def get_current_ratings():
         if cache["ratings"] and now - cache["ratings_time"] < 60:
             return cache["ratings"]
 
-        rating_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit"
-        ).worksheet("Rating")
-
         all_rows = rating_sheet.get_all_values()
         if len(all_rows) < 2:
             return {}
@@ -229,9 +140,6 @@ def get_current_ratings():
 def get_player_rating_history(player_name):
     """Отримати історію рейтингу гравця"""
     try:
-        rating_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Rating")
 
         all_rows = rating_sheet.get_all_values()
         if len(all_rows) < 2:
@@ -385,17 +293,15 @@ def calculate_dynamic_k_factor(games_played, player_rating=None):
 def get_player_games_count(player_name):
     """Отримати кількість зіграних матчів для гравця з кешем"""
     try:
-        if not cache["matches_rows"] or not cache["teams_rows"]:
-            matches_sheet = client.open_by_url(
-                "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit"
-            ).worksheet("Matches")
-
-            teams_sheet = client.open_by_url(
-                "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit"
-            ).worksheet("Teams")
-
+        now = time.time()
+        if not cache["matches_rows"] or now - cache["matches_time"] > 60:
+            matches_sheet = spreadsheet.worksheet("Matches")
             cache["matches_rows"] = matches_sheet.get_all_values()
+            cache["matches_time"] = now
+
+        if not cache["teams_rows"] or now - cache["teams_time"] > 60:
             cache["teams_rows"] = teams_sheet.get_all_values()
+            cache["teams_time"] = now
 
         matches_rows = cache["matches_rows"]
         teams_rows = cache["teams_rows"]
@@ -441,9 +347,6 @@ def calculate_new_rating_with_dynamic_k(old_rating, actual_score, expected_score
 def update_rating_table(match_id, match_date, team1, team2, score1, score2):
     """Оновлення таблиці Rating з динамічним K-фактором"""
     try:
-        rating_sheet = client.open_by_url(
-            "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-        ).worksheet("Rating")
 
         # Отримати гравців для обох команд
         team1_players = get_team_players(team1, match_date)
@@ -707,7 +610,7 @@ def result(update, context):
         today = datetime.now().strftime("%Y-%m-%d")
 
         # Отримати всі дані з таблиці
-        all_rows = sheet.get_all_values()
+        all_rows = match_sheet.get_all_values()
         if not all_rows:
             update.message.reply_text("⚠️ Помилка доступу до таблиці")
             return
@@ -740,7 +643,7 @@ def result(update, context):
         while len(row_to_add) > len(headers):
             headers.append(f"col_{len(headers)}")
 
-        sheet.append_row(row_to_add)
+        match_sheet.append_row(row_to_add)
 
         # Оновити таблицю Rating
         rating_changes = update_rating_table(match_id, today, team1, team2, score1, score2)
@@ -785,7 +688,7 @@ def delete(update, context):
             return
 
         # Отримати всі рядки
-        all_rows = sheet.get_all_values()
+        all_rows = match_sheet.get_all_values()
         if len(all_rows) <= 1:
             update.message.reply_text("⚠️ У таблиці немає даних для видалення.")
             return
@@ -808,13 +711,10 @@ def delete(update, context):
 
         # Видалити останній рядок
         last_row_index = deletable_indices[-1]
-        sheet.delete_rows(last_row_index)
+        match_sheet.delete_rows(last_row_index)
 
         # Видалити з таблиці Rating
         try:
-            rating_sheet = client.open_by_url(
-                "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250"
-            ).worksheet("Rating")
 
             rating_rows = rating_sheet.get_all_values()
             if len(rating_rows) > 1:
@@ -892,14 +792,11 @@ def webhook():
             return 'No data', 400
 
         update = Update.de_json(json_data, bot)
+        dispatcher.process_update(update)
         logging.info(f"📥 Отримано update: {update.update_id}")
 
-        # Обробити update одразу
-        with timeout(60):
-            dispatcher.process_update(update)
 
         logging.info(f"✅ Update {update.update_id} оброблено успішно")
-
         return 'OK'
     except TimeoutError:
         logging.error("⛔ Таймаут при обробці update")
@@ -926,7 +823,7 @@ def health_check():
         'service': 'volleyball-rating-bot',
         'timestamp': datetime.now().isoformat(),
         'uptime': time.time(),
-        'sheets_connected': sheet is not None
+        'sheets_connected': spreadsheet is not None
     }
 
 # Налаштування webhook при запуску
@@ -945,9 +842,6 @@ def setup_webhook():
         webhook_info = bot.get_webhook_info()
         logging.info(f"Webhook info: {webhook_info}")
 
-        # Запуск keep-alive
-        start_keep_alive()
-        logging.info(f"Keep-alive налаштовано з інтервалом {KEEP_ALIVE_INTERVAL} секунд")
 
     except Exception as e:
         logging.error(f"Помилка встановлення webhook: {e}")
