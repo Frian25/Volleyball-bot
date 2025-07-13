@@ -684,10 +684,10 @@ def delete(update, context):
     """Команда для видалення останнього матчу"""
     try:
         if update.message.chat.type == 'private':
-            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.    ")
+            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.")
             return
 
-        # Отримати всі рядки
+        # Отримати всі рядки з match_sheet
         all_rows = match_sheet.get_all_values()
         if len(all_rows) <= 1:
             update.message.reply_text("⚠️ У таблиці немає даних для видалення.")
@@ -703,28 +703,36 @@ def delete(update, context):
         deletable_indices = []
         for i, row in enumerate(data_rows):
             if len(row) > date_index and row[date_index] == today:
-                deletable_indices.append(i + 2)  # +2 для правильної індексації
+                deletable_indices.append(i + 2)  # +2 бо 1 — заголовки, ще 1 — зсув
 
         if not deletable_indices:
             update.message.reply_text("⚠️ Немає записів за сьогодні для видалення.")
             return
 
-        # Видалити останній рядок
+        # Видалити останній рядок за сьогодні
         last_row_index = deletable_indices[-1]
+        deleted_row = all_rows[last_row_index - 1]  # -1 бо all_rows починається з 0
+        match_id_to_delete = deleted_row[0] if deleted_row else None
+
         match_sheet.delete_rows(last_row_index)
+        logging.info(f"✅ Видалено з Match Sheet рядок #{last_row_index}")
 
-        # Видалити з таблиці Rating
+        # Видалити з таблиці Rating за match_id
         try:
-
             rating_rows = rating_sheet.get_all_values()
-            if len(rating_rows) > 1:
-                rating_sheet.delete_rows(len(rating_rows))
-                logging.info("Видалено останній рядок з Rating")
-                update.message.reply_text("✅ Видалено останній матч.")
+            for i, row in enumerate(rating_rows[1:], start=2):  # Пропускаємо заголовок
+                if row and row[0] == match_id_to_delete:
+                    rating_sheet.delete_rows(i)
+                    logging.info(f"✅ Видалено з Rating рядок #{i} (match_id={match_id_to_delete})")
+                    break
+            else:
+                logging.warning(f"⚠️ match_id {match_id_to_delete} не знайдено в Rating")
+
+            update.message.reply_text("✅ Видалено останній матч з обох таблиць.")
 
         except Exception as e:
             logging.error(f"Помилка при видаленні з Rating: {e}")
-            update.message.reply_text("❌ Не вдалось видалити останній матч")
+            update.message.reply_text("⚠️ Видалено з Match Sheet, але не з Rating")
 
     except Exception as e:
         logging.error(f"Помилка в команді delete: {e}")
@@ -732,7 +740,6 @@ def delete(update, context):
             update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
         else:
             update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
-
 
 def help_command(update, context):
     """Команда допомоги"""
