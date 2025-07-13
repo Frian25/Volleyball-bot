@@ -750,7 +750,7 @@ def delete(update, context):
             else:
                 logging.warning(f"⚠️ match_id {match_id_to_delete} не знайдено в Rating")
 
-            update.message.reply_text("✅ Видалено останній матч з обох таблиць.")
+            update.message.reply_text("✅ Видалено останній матч.")
 
         except Exception as e:
             logging.error(f"Помилка при видаленні з Rating: {e}")
@@ -785,7 +785,7 @@ def help_command(update, context):
 • Новачки мають високий K-фактор (швидше змінюється рейтинг)
 • Враховується сила суперника та різниця в рахунку
 • Рейтинг змінюється ТІЛЬКИ у гравців які фактично грали
-• Матчі зараховуються тільки тим, хто брав участь
+• Якщо гравець не грає більше ніж 2 тижні, то його рейтинг поступово починає знижуватись до початкового
 
 """
     update.message.reply_text(help_text)
