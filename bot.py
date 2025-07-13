@@ -538,7 +538,7 @@ def leaderboard(update, context):
         sorted_players = sorted(current_ratings.items(), key=lambda x: x[1], reverse=True)
 
         message = "🏆 Топ гравців:\n\n"
-        for i, (player, rating) in enumerate(sorted_players[:5], 1):
+        for i, (player, rating) in enumerate(sorted_players[:10], 1):
             games = get_player_games_count(player)
             if i == 1:
                 message += f"🥇 {player}: {rating} ({games} ігор)\n"
@@ -720,10 +720,11 @@ def delete(update, context):
             if len(rating_rows) > 1:
                 rating_sheet.delete_rows(len(rating_rows))
                 logging.info("Видалено останній рядок з Rating")
+                update.message.reply_text("✅ Видалено останній матч.")
 
         except Exception as e:
             logging.error(f"Помилка при видаленні з Rating: {e}")
-            update.message.reply_text("✅ Видалено останній матч з обох таблиць.")
+            update.message.reply_text("❌ Не вдалось видалити останній матч")
 
     except Exception as e:
         logging.error(f"Помилка в команді delete: {e}")
