@@ -176,7 +176,6 @@ def get_player_rating_history(player_name):
         logging.error(f"Помилка при отриманні історії рейтингу: {e}")
         return []
 
-
 def create_rating_chart(player_name, history):
     """Створити графік динаміки рейтингу по матчах"""
     if not history:
@@ -343,10 +342,44 @@ def calculate_new_rating_with_dynamic_k(old_rating, actual_score, expected_score
 
     return round(new_rating)
 
+def get_last_game_date(player_name):
+    """Повертає дату останнього матчу гравця (як datetime)"""
+    try:
+        now = time.time()
+        if not cache["matches_rows"] or now - cache["matches_time"] > 60:
+            matches_sheet = spreadsheet.worksheet("Matches")
+            cache["matches_rows"] = matches_sheet.get_all_values()
+            cache["matches_time"] = now
+
+        if not cache["teams_rows"] or now - cache["teams_time"] > 60:
+            teams_sheet = spreadsheet.worksheet("Teams")
+            cache["teams_rows"] = teams_sheet.get_all_values()
+            cache["teams_time"] = now
+
+        matches_rows = cache["matches_rows"]
+        teams_rows = cache["teams_rows"]
+
+        dates = []
+        for match_row in matches_rows[1:]:
+            if len(match_row) >= 2:
+                match_date = match_row[1]
+                for team_row in teams_rows[1:]:
+                    if len(team_row) >= 6 and team_row[0] == match_date:
+                        team1 = team_row[2].split(', ') if team_row[2] else []
+                        team2 = team_row[5].split(', ') if len(team_row) > 5 and team_row[5] else []
+                        all_players = [p.strip() for p in team1 + team2 if p.strip()]
+                        if player_name in all_players:
+                            dates.append(datetime.strptime(match_date, "%Y-%m-%d"))
+
+        return max(dates) if dates else None
+    except Exception as e:
+        logging.error(f"Помилка при пошуку останнього матчу гравця {player_name}: {e}")
+        return None
 
 def update_rating_table(match_id, match_date, team1, team2, score1, score2):
-    """Оновлення таблиці Rating з динамічним K-фактором"""
+    """Оновлення таблиці Rating з динамічним K-фактором і зниженням за неактивність"""
     try:
+        match_date_dt = datetime.strptime(match_date, "%Y-%m-%d")
 
         # Отримати гравців для обох команд
         team1_players = get_team_players(team1, match_date)
@@ -359,16 +392,14 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
         # Отримати поточні рейтинги
         current_ratings = get_current_ratings()
 
-        # Додати нових гравців з початковим рейтингом (тільки тих, хто грав)
+        # Додати нових гравців з початковим рейтингом
         playing_players = set(team1_players + team2_players)
         for player in playing_players:
             if player not in current_ratings:
                 current_ratings[player] = INITIAL_RATING
 
-        # Отримати заголовки таблиці Rating
+        # Заголовки
         rating_headers = rating_sheet.row_values(1) if rating_sheet.row_values(1) else []
-
-        # Якщо заголовків немає, створити їх
         if not rating_headers:
             headers = ['match_id', 'date'] + sorted(current_ratings.keys())
             rating_sheet.append_row(headers)
@@ -380,80 +411,71 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
             rating_headers.extend(sorted(new_players))
             rating_sheet.update('1:1', [rating_headers])
 
-        # Розрахувати середні рейтинги команд
+        # Середній рейтинг команд
         avg_rating_team1 = get_team_average_rating(team1_players, current_ratings)
         avg_rating_team2 = get_team_average_rating(team2_players, current_ratings)
 
-        # Очікувані результати
+        # Очікувані та фактичні результати
         expected_team1 = calculate_expected_score(avg_rating_team1, avg_rating_team2)
         expected_team2 = 1 - expected_team1
-
-        # Фактичні результати
+        actual_team1 = actual_team2 = 0.5
         if score1 > score2:
             actual_team1, actual_team2 = 1, 0
         elif score2 > score1:
             actual_team1, actual_team2 = 0, 1
-        else:
-            actual_team1, actual_team2 = 0.5, 0.5  # Нічия
 
-        # Множник на основі рахунку
-        if score1 != score2:
-            multiplier = get_score_multiplier(max(score1, score2), min(score1, score2))
-        else:
-            multiplier = 1.0
+        multiplier = get_score_multiplier(max(score1, score2), min(score1, score2)) if score1 != score2 else 1.0
 
-        # Створити копію поточних рейтингів для оновлення
+        # Оновлені рейтинги
         new_ratings = current_ratings.copy()
         changes = []
 
-        # Оновити рейтинги ТІЛЬКИ гравців команди 1 (які грали)
-        for player in team1_players:
+        # ⚙️ Оновлення гравців, які грали
+        for player, actual_score, expected_score in zip(
+            team1_players + team2_players,
+            [actual_team1] * len(team1_players) + [actual_team2] * len(team2_players),
+            [expected_team1] * len(team1_players) + [expected_team2] * len(team2_players)
+        ):
             old_rating = new_ratings.get(player, INITIAL_RATING)
             games_played = get_player_games_count(player)
-
             new_rating = calculate_new_rating_with_dynamic_k(
-                old_rating, actual_team1, expected_team1, games_played, multiplier
+                old_rating, actual_score, expected_score, games_played, multiplier
             )
-
-            new_ratings[player] = new_rating
             k_factor = calculate_dynamic_k_factor(games_played, old_rating)
-
+            new_ratings[player] = new_rating
             change = new_rating - old_rating
             changes.append(f"{player}: {old_rating}→{new_rating} ({change:+d}) [K={k_factor:.1f}]")
 
-        # Оновити рейтинги ТІЛЬКИ гравців команди 2 (які грали)
-        for player in team2_players:
-            old_rating = new_ratings.get(player, INITIAL_RATING)
-            games_played = get_player_games_count(player)
+        # 📉 Зниження рейтингу для неактивних гравців
+        for player in current_ratings:
+            if player in playing_players:
+                continue  # Гравець грав — не знижуємо
 
-            new_rating = calculate_new_rating_with_dynamic_k(
-                old_rating, actual_team2, expected_team2, games_played, multiplier
-            )
+            last_game_date = get_last_game_date(player)
+            if not last_game_date:
+                continue
 
-            new_ratings[player] = new_rating
-            k_factor = calculate_dynamic_k_factor(games_played, old_rating)
+            days_inactive = (match_date_dt - last_game_date).days
+            if days_inactive < 17:
+                continue  # Ще не пройшло 2 тижні
 
-            change = new_rating - old_rating
-            changes.append(f"{player}: {old_rating}→{new_rating} ({change:+d}) [K={k_factor:.1f}]")
+            old_rating = current_ratings[player]
+            if old_rating > 1500:
+                reduced_rating = max(1500, old_rating - 10)
+                new_ratings[player] = reduced_rating
+                changes.append(
+                    f"📉 {player}: не грав з {last_game_date.date()} "
+                    f"({days_inactive} днів), рейтинг {old_rating}→{reduced_rating}"
+                )
 
-        # Підготувати рядок для додавання
+        # 🧾 Додаємо новий рядок у таблицю Rating
         row_to_add = [match_id, match_date]
-
-        # Для кожного гравця в заголовках
         for i in range(2, len(rating_headers)):
             player_name = rating_headers[i]
-            if player_name in new_ratings:
-                row_to_add.append(new_ratings[player_name])
-            else:
-                # Якщо гравець не грав у цьому матчі, беремо його попередній рейтинг
-                if player_name in current_ratings:
-                    row_to_add.append(current_ratings[player_name])
-                else:
-                    row_to_add.append(INITIAL_RATING)
+            row_to_add.append(new_ratings.get(player_name, INITIAL_RATING))
 
-        # Додати рядок до таблиці Rating
         rating_sheet.append_row(row_to_add)
-        logging.info(f"Додано рядок до Rating для матчу {match_id} (оновлено тільки гравців які грали)")
+        logging.info(f"📝 Додано матч {match_id}, оновлено рейтинги")
 
         return changes
 
