@@ -327,7 +327,7 @@ def get_player_games_count(player_name):
 
         return games_count
     except Exception as e:
-        logging.error(f"Помилка отримання кількості ігор для {player_name}: {e}")
+        logging.error(f"Помилка отримання кількості сетів для {player_name}: {e}")
         return 0
 
 
@@ -563,13 +563,13 @@ def leaderboard(update, context):
         for i, (player, rating) in enumerate(sorted_players[:10], 1):
             games = get_player_games_count(player)
             if i == 1:
-                message += f"🥇 {player}: {rating} ({games} ігор)\n"
+                message += f"🥇 {player}: {rating} ({games} сетів)\n"
             elif i == 2:
-                message += f"🥈 {player}: {rating} ({games} ігор)\n"
+                message += f"🥈 {player}: {rating} ({games} сетів)\n"
             elif i == 3:
-                message += f"🥉 {player}: {rating} ({games} ігор)\n"
+                message += f"🥉 {player}: {rating} ({games} сетів)\n"
             else:
-                message += f"{i}. {player}: {rating} ({games} ігор)\n"
+                message += f"{i}. {player}: {rating} ({games} сетів)\n"
 
         update.message.reply_text(message)
 
