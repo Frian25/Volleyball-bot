@@ -151,11 +151,19 @@ def generate_teams(update, context):
             return
 
         if not context.args:
-            context.bot.send_message(update.message.chat_id, "⚠️ Please specify the date in the format: /generate_teams YYYY-MM-DD")
+            context.bot.send_message(update.message.chat_id, "⚠️ Please specify the date in the format: /generate_teams YYYY-MM-DD [number_of_teams]")
             return
 
         game_date = context.args[0]
-        num_teams = int(context.args[1]) if len(context.args) > 1 else 2
+
+        try:
+            num_teams = int(context.args[1]) if len(context.args) > 1 else 2
+            if num_teams < 2:
+                context.bot.send_message(update.message.chat_id, "⚠️ The minimum number of teams is 2.")
+                return
+        except ValueError:
+            context.bot.send_message(update.message.chat_id, "⚠️ Number of teams must be an integer.")
+            return
 
         players = get_team_candidates()
         if not players:
@@ -188,7 +196,6 @@ def generate_teams(update, context):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Надсилаємо нове повідомлення (не reply)
         context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown", reply_markup=reply_markup)
 
     except Exception as e:
@@ -238,6 +245,7 @@ def button_handler(update, context):
     elif query.data == "regenerate_teams":
         context.bot.delete_message(chat_id, query.message.message_id)
         fake_update = type("Fake", (), {"message": query.message, "args": [data["date"]]})
+        context.args = [data["date"], str(len(data["teams"]))]
         generate_teams(fake_update, context)
 
 
