@@ -6,6 +6,8 @@ import uuid
 import math
 import time
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from collections import defaultdict
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request
@@ -321,9 +323,8 @@ def get_current_ratings():
         return {}
 
 def get_player_rating_history(player_name):
-    """Отримати історію рейтингу гравця"""
+    """Отримати історію рейтингу гравця (тільки з моменту першого матчу)"""
     try:
-
         all_rows = rating_sheet.get_all_values()
         if len(all_rows) < 2:
             return []
@@ -344,73 +345,76 @@ def get_player_rating_history(player_name):
         history = []
         for row in data_rows:
             if len(row) > max(1, player_index):
-                try:
-                    date_str = row[1]  # date column
-                    rating = int(float(row[player_index])) if row[player_index] else INITIAL_RATING
+                date_str = row[1].strip() if len(row) > 1 else ""
+                value = row[player_index].strip() if player_index < len(row) else ""
 
-                    # Перетворити дату у формат datetime
+                if not value:
+                    continue  # Пропускаємо, поки не буде рейтингу
+
+                try:
+                    rating = int(float(value))
                     match_date = datetime.strptime(date_str, "%Y-%m-%d")
                     history.append((match_date, rating))
                 except (ValueError, IndexError):
                     continue
 
         return history
+
     except Exception as e:
         logging.error(f"Error retrieving rating history: {e}")
         return []
 
 def create_rating_chart(player_name, history):
-    """Створити графік динаміки рейтингу по матчах"""
+    """Створити графік середнього рейтингу гравця по тижнях"""
     if not history:
         return None
 
     try:
-        # Налаштування для підтримки українських символів
-        plt.rcParams['font.family'] = 'DejaVu Sans'
+        # Групуємо рейтинги по тижнях
+        weekly_ratings = defaultdict(list)
 
-        # Створюємо послідовність матчів
-        matches = list(range(1, len(history) + 1))
-        dates, ratings = zip(*history)
+        for date, rating in history:
+            year, week, _ = date.isocalendar()
+            key = f"{year}-W{week:02d}"
+            weekly_ratings[key].append(rating)
 
+        # Сортуємо тижні
+        sorted_weeks = sorted(weekly_ratings.keys())
+
+        # Формуємо списки для графіка
+        week_labels = []
+        avg_ratings = []
+
+        for week in sorted_weeks:
+            ratings = weekly_ratings[week]
+            avg_rating = sum(ratings) / len(ratings)
+            week_labels.append(week)
+            avg_ratings.append(avg_rating)
+
+        # Будуємо графік
         fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(matches, ratings, marker='o', linewidth=2, markersize=4, color='#2E86AB')
+        ax.plot(week_labels, avg_ratings, marker='o', linewidth=2, markersize=4)
 
-        # Налаштування осей
-        ax.set_xlabel('Matches №', fontsize=12)
-        ax.set_ylabel('Rating', fontsize=12)
-        ax.set_title(f'Rating dynamic: {player_name}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Week', fontsize=12)
+        ax.set_ylabel('Average Rating', fontsize=12)
+        ax.set_title(f'Weekly Rating Trend: {player_name}', fontsize=14, fontweight='bold')
 
-        # Налаштування осі X для відображення номерів матчів
-        ax.set_xlim(0.5, len(matches) + 0.5)
-
-        # Встановлюємо мітки на осі X
-        if len(matches) <= 20:
-            # Якщо матчів мало, показуємо всі
-            ax.set_xticks(matches)
-        else:
-            # Якщо матчів багато, показуємо через інтервал
-            step = max(1, len(matches) // 10)
-            ticks = list(range(1, len(matches) + 1, step))
-            if ticks[-1] != len(matches):
-                ticks.append(len(matches))
-            ax.set_xticks(ticks)
-
-        # Сітка
+        ax.set_xticks(week_labels)
+        ax.tick_params(axis='x', rotation=45)
         ax.grid(True, alpha=0.3)
-        ax.legend()
 
-        # Покращити вигляд
         plt.tight_layout()
 
-        # Зберегти у байт-буфер
+        # Зберігаємо в байт-буфер
         buffer = io.BytesIO()
         plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
         buffer.seek(0)
         plt.close()
 
         return buffer
+
     except Exception as e:
-        logging.error(f"Error creating chart: {e}")
+        logging.error(f"Error creating weekly chart: {e}")
         return None
 
 def calculate_expected_score(rating_a, rating_b):
