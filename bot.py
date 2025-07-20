@@ -147,31 +147,23 @@ pending_teams = {}  # cache для збереження тимчасових к�
 def generate_teams(update, context):
     try:
         if update.message.chat.type == 'private':
-            update.message.reply_text("⚠️ This command can only be used in a group.")
+            context.bot.send_message(update.message.chat_id, "⚠️ This command can only be used in a group.")
             return
 
         if not context.args:
-            update.message.reply_text("⚠️ Usage: /generate_teams YYYY-MM-DD [number_of_teams]")
+            context.bot.send_message(update.message.chat_id, "⚠️ Please specify the date in the format: /generate_teams YYYY-MM-DD")
             return
 
         game_date = context.args[0]
-
-        try:
-            num_teams = int(context.args[1]) if len(context.args) > 1 else 2
-            if num_teams < 2:
-                update.message.reply_text("⚠️ Number of teams must be at least 2.")
-                return
-        except ValueError:
-            update.message.reply_text("⚠️ Number of teams must be an integer.")
-            return
+        num_teams = int(context.args[1]) if len(context.args) > 1 else 2
 
         players = get_team_candidates()
         if not players:
-            update.message.reply_text("⚠️ No players are marked as ready to play.")
+            context.bot.send_message(update.message.chat_id, "⚠️ No players are marked as ready to play.")
             return
 
         teams, team_sums, team_counts = regenerate_teams_logic(players, num_teams=num_teams)
-        team_names = [faker.word().lower() for _ in range(num_teams)]  # маленькі назви
+        team_names = [faker.word() for _ in range(num_teams)]  # lowercase
 
         text = f"📅 Teams for {game_date}:\n"
         for i, team in enumerate(teams):
@@ -181,16 +173,13 @@ def generate_teams(update, context):
             avg_score = round(team_sums[i] / team_counts[i] / 100, 2)
             text += f"Average rating: {avg_score}_\n"
 
-        # Cache for confirmation
         chat_id = update.message.chat_id
-        message_id = update.message.message_id
         pending_teams[chat_id] = {
             "date": game_date,
             "teams": teams,
             "team_names": team_names,
             "sums": team_sums,
-            "counts": team_counts,
-            "message_id": message_id
+            "counts": team_counts
         }
 
         keyboard = [
@@ -199,15 +188,12 @@ def generate_teams(update, context):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        update.message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+        # Надсилаємо нове повідомлення (не reply)
+        context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown", reply_markup=reply_markup)
 
     except Exception as e:
         logging.error(f"Error in /generate_teams: {e}")
-        update.message.reply_text("❌ An error occurred while generating the teams.")
-
-    except Exception as e:
-        logging.error(f"Error in /generate_teams: {e}")
-        update.message.reply_text("❌ An error occurred while generating the teams.")
+        context.bot.send_message(update.message.chat_id, "❌ An error occurred while generating the teams.")
 
 
 def button_handler(update, context):
