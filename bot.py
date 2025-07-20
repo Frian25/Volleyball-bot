@@ -8,6 +8,7 @@ import time
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from collections import defaultdict
+from datetime import timedelta
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request
@@ -365,33 +366,48 @@ def get_player_rating_history(player_name):
         return []
 
 def create_rating_chart(player_name, history):
-    """Створити графік середнього рейтингу гравця по тижнях"""
+    """Створити графік середнього рейтингу гравця по тижнях, без пропущених"""
     if not history:
         return None
 
     try:
         # Групуємо рейтинги по тижнях
         weekly_ratings = defaultdict(list)
-
         for date, rating in history:
             year, week, _ = date.isocalendar()
-            key = f"{year}-W{week:02d}"
+            key = (year, week)
             weekly_ratings[key].append(rating)
 
-        # Сортуємо тижні
-        sorted_weeks = sorted(weekly_ratings.keys())
+        # Визначаємо повний діапазон тижнів
+        start_date = min(date for date, _ in history)
+        end_date = max(date for date, _ in history)
 
-        # Формуємо списки для графіка
+        current = start_date
+        full_weeks = []
+        while current <= end_date:
+            year, week, _ = current.isocalendar()
+            key = (year, week)
+            if key not in full_weeks:
+                full_weeks.append(key)
+            current += timedelta(days=7)
+
+        # Формуємо список тижнів і середніх рейтингів
         week_labels = []
         avg_ratings = []
+        last_known_rating = None
 
-        for week in sorted_weeks:
-            ratings = weekly_ratings[week]
-            avg_rating = sum(ratings) / len(ratings)
-            week_labels.append(week)
-            avg_ratings.append(avg_rating)
+        for year, week in full_weeks:
+            key = (year, week)
+            label = f"{year}-W{week:02d}"
+            week_labels.append(label)
 
-        # Будуємо графік
+            if key in weekly_ratings:
+                ratings = weekly_ratings[key]
+                avg = sum(ratings) / len(ratings)
+                last_known_rating = avg
+            avg_ratings.append(last_known_rating)
+
+        # Побудова графіка
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.plot(week_labels, avg_ratings, marker='o', linewidth=2, markersize=4)
 
@@ -405,7 +421,6 @@ def create_rating_chart(player_name, history):
 
         plt.tight_layout()
 
-        # Зберігаємо в байт-буфер
         buffer = io.BytesIO()
         plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
         buffer.seek(0)
