@@ -12,13 +12,6 @@ from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler
 import io
-import random
-import pandas as pd
-from faker import Faker
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackQueryHandler
-
-faker = Faker("uk_UA")
 
 # Простий кеш для зчитаних даних
 cache = {
@@ -40,13 +33,14 @@ logger = logging.getLogger(__name__)
 # Flask додаток
 app = Flask(__name__)
 
+
 # Отримуємо JSON з ключами з середовища
 try:
     creds_dict = json.loads(os.environ["CREDS_JSON"])
-    logger.info("Credentials loaded successfully")
+    logger.info("Credentials успішно завантажено")
 except Exception as e:
-    logger.error(f"❌ Failed to load credentials: {e}")
-    raise SystemExit("❌ Unable to load credentials from environment variables")
+    logger.error(f"Помилка завантаження credentials: {e}")
+    raise SystemExit("❌ Не вдалося завантажити credentials з середовища")
 
 # Права доступу до Google Sheets API
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -55,14 +49,13 @@ client = gspread.authorize(creds)
 
 # Отримуємо таблицю
 try:
-    spreadsheet = client.open_by_url(
-        "https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250")
+    spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1caXAMQ-xYbBt-8W6pMVOM99vaxabgSeDwIhp1Wsh6Dg/edit?gid=1122235250#gid=1122235250")
     rating_sheet = spreadsheet.worksheet("Rating")
     teams_sheet = spreadsheet.worksheet("Teams")
     match_sheet = spreadsheet.worksheet("Matches")
-    logger.info("Connected to  Google Sheets successfully")
+    logger.info("Підключення до Google Sheets успішне")
 except Exception as e:
-    logger.error(f"Error connecting to the spreadsheet: {e}")
+    logger.error(f"Помилка підключення до таблиці: {e}")
     spreadsheet = None
 
 # Константи для рейтингової системи
@@ -73,165 +66,6 @@ STABILIZATION_GAMES = 25
 HIGH_RATING_THRESHOLD = 1700
 HIGH_RATING_K_MULTIPLIER = 0.8
 
-# Статичні дані
-incompatible_pairs = [("Ігор Гончаренко", "Максим Лепський"),
-                      ("Богдан Бурко", "Максим Лепський"),
-                      ("Данило Шипрук", "Максим Лепський"),
-                      ("Єгор Верзун", "Максим Лепський"),
-                      ("Єгор Верзун", "Максим Вірченко"),
-                      ("Богдан Бурко", "Аліна Середа")]
-
-
-def get_team_candidates():
-    """Отримати список гравців, які готові до гри"""
-    try:
-        sheet = spreadsheet.sheet1
-        df = pd.DataFrame(sheet.get_all_records())
-        df = df.query("is_ready == 1")
-        return list(zip(df["Player Name"], df["Rating for Team Matching"]))
-    except Exception as e:
-        logging.error(f"❌ Error retrieving players: {e}")
-        return []
-
-
-def violates_restriction(team, pairs):
-    names = {name for name, _ in team}
-    return any(a in names and b in names for a, b in pairs)
-
-
-def regenerate_teams_logic(names_scores, num_teams=2, max_difference=20):
-    max_players_per_team = len(names_scores) // num_teams
-
-    while True:
-        teams = [[] for _ in range(num_teams)]
-        team_sums = [0] * num_teams
-        team_counts = [0] * num_teams
-
-        random.shuffle(names_scores)
-
-        for name, score in names_scores:
-            best_team = None
-            min_diff = float("inf")
-
-            for i in range(num_teams):
-                if team_counts[i] >= max_players_per_team:
-                    continue
-
-                teams[i].append((name, score))
-                if not violates_restriction(teams[i], incompatible_pairs):
-                    temp_sums = team_sums[:]
-                    temp_sums[i] += score
-                    diff = max(temp_sums) - min(temp_sums)
-
-                    if diff < min_diff and diff <= max_difference:
-                        min_diff = diff
-                        best_team = i
-                teams[i].pop()
-
-            if best_team is None:
-                best_team = team_counts.index(min(team_counts))
-
-            teams[best_team].append((name, score))
-            team_sums[best_team] += score
-            team_counts[best_team] += 1
-
-        avg_scores = [team_sums[i] / team_counts[i] for i in range(num_teams)]
-        if abs(max(avg_scores) - min(avg_scores)) <= max_difference:
-            if all(not violates_restriction(t, incompatible_pairs) for t in teams):
-                return teams, team_sums, team_counts
-
-
-pending_teams = {}  # cache для збереження тимчасових команд перед підтвердженням
-
-
-def generate_teams(update, context):
-    try:
-        if update.message.chat.type == 'private':
-            update.message.reply_text("⚠️ This command can only be used in a group.")
-            return
-
-        if not context.args:
-            update.message.reply_text("⚠️ Please specify the date in the format: /generate_teams YYYY-MM-DD")
-            return
-
-        game_date = context.args[0]
-        players = get_team_candidates()
-        if not players:
-            update.message.reply_text("⚠️ No players are marked as ready to play.")
-            return
-
-        teams, team_sums, team_counts = regenerate_teams_logic(players)
-        team_names = [faker.word().capitalize() for _ in range(2)]
-
-        text = f"📅 Teams for {game_date}:\n"
-        for i, team in enumerate(teams):
-            text += f"\n🏐 *Team {i + 1}* ({team_names[i]}):\n"
-            for name, _ in team:
-                text += f"• {name}\n"
-            avg_score = round(team_sums[i] / team_counts[i] / 100, 2)
-            text += f"Average rating: {avg_score}_\n"
-
-        # Зберігаємо у пам'ять
-        message_id = update.message.message_id
-        chat_id = update.message.chat_id
-        pending_teams[chat_id] = {
-            "date": game_date,
-            "teams": teams,
-            "team_names": team_names,
-            "sums": team_sums,
-            "counts": team_counts,
-            "message_id": message_id
-        }
-
-        # Кнопки
-        keyboard = [
-            [InlineKeyboardButton("✅ Confirm", callback_data="confirm_teams")],
-            [InlineKeyboardButton("🔁 Regenerate", callback_data="regenerate_teams")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        update.message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
-
-    except Exception as e:
-        logging.error(f"Error in /generate_teams: {e}")
-        update.message.reply_text("❌ An error occurred while generating the teams.")
-
-
-def button_handler(update, context):
-    query = update.callback_query
-    query.answer()
-
-    chat_id = query.message.chat_id
-    user = query.from_user.first_name
-
-    if chat_id not in pending_teams:
-        query.edit_message_text("⚠️ Teams have already been confirmed or were not found.")
-        return
-
-    data = pending_teams[chat_id]
-    if query.data == "confirm_teams":
-        # Зберігаємо у таблицю
-        teams_worksheet = spreadsheet.worksheet("Teams")
-        header = teams_worksheet.row_values(1)
-        row = {"date": data["date"]}
-
-        for i, team in enumerate(data["teams"]):
-            row[f"team_{i + 1}"] = data["team_names"][i]
-            row[f"team_{i + 1}_players"] = ", ".join([p for p, _ in team])
-            row[f"avg_rate_team_{i + 1}"] = round(data["sums"][i] / data["counts"][i] / 100, 2)
-
-        row_data = [row.get(col, "") for col in header]
-        teams_worksheet.append_row(row_data)
-
-        query.edit_message_text("✅ Teams have been successfully confirmed and saved.")
-        context.bot.send_message(chat_id, "🎉 Teams have been created! Good luck in the game!")
-        pending_teams.pop(chat_id)
-
-    elif query.data == "regenerate_teams":
-        context.bot.delete_message(chat_id, query.message.message_id)
-        fake_update = type("Fake", (), {"message": query.message, "args": [data["date"]]})
-        generate_teams(fake_update, context)
-
 
 def is_quota_exceeded_error(e):
     error_str = str(e).lower()
@@ -240,14 +74,13 @@ def is_quota_exceeded_error(e):
         "too many requests", "service unavailable"
     ])
 
-
 def get_team_players(team_name, match_date):
     """Отримати список гравців команди на певну дату"""
     try:
 
         all_rows = teams_sheet.get_all_values()
         if len(all_rows) < 2:
-            logging.warning("⚠️ The Teams sheet is empty or contains only headers.")
+            logging.warning("Таблиця Teams порожня або має тільки заголовки")
             return []
 
         headers = all_rows[0]
@@ -263,10 +96,10 @@ def get_team_players(team_name, match_date):
                     players = row[5].split(', ') if row[5] else []
                     return [player.strip() for player in players if player.strip()]
 
-        logging.warning(f"No players found for team {team_name} on date {match_date}.")
+        logging.warning(f"Не знайдено гравців для команди {team_name} на дату {match_date}")
         return []
     except Exception as e:
-        logging.error(f"❌ Error while retrieving team players: {e}")
+        logging.error(f"Помилка при отриманні гравців команди: {e}")
         return []
 
 
@@ -301,7 +134,7 @@ def get_current_ratings():
 
         return ratings
     except Exception as e:
-        logging.error(f"Error while retrieving ratings: {e}")
+        logging.error(f"Помилка при отриманні рейтингів: {e}")
         return {}
 
 def get_player_rating_history(player_name):
@@ -340,7 +173,7 @@ def get_player_rating_history(player_name):
 
         return history
     except Exception as e:
-        logging.error(f"Error retrieving rating history: {e}")
+        logging.error(f"Помилка при отриманні історії рейтингу: {e}")
         return []
 
 def create_rating_chart(player_name, history):
@@ -360,9 +193,9 @@ def create_rating_chart(player_name, history):
         ax.plot(matches, ratings, marker='o', linewidth=2, markersize=4, color='#2E86AB')
 
         # Налаштування осей
-        ax.set_xlabel('Matches №', fontsize=12)
-        ax.set_ylabel('Rating', fontsize=12)
-        ax.set_title(f'Rating dynamic: {player_name}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Матч №', fontsize=12)
+        ax.set_ylabel('Рейтинг', fontsize=12)
+        ax.set_title(f'Динаміка рейтингу: {player_name}', fontsize=14, fontweight='bold')
 
         # Налаштування осі X для відображення номерів матчів
         ax.set_xlim(0.5, len(matches) + 0.5)
@@ -394,7 +227,7 @@ def create_rating_chart(player_name, history):
 
         return buffer
     except Exception as e:
-        logging.error(f"Error creating chart: {e}")
+        logging.error(f"Помилка створення графіка: {e}")
         return None
 
 def calculate_expected_score(rating_a, rating_b):
@@ -494,7 +327,7 @@ def get_player_games_count(player_name):
 
         return games_count
     except Exception as e:
-        logging.error(f"Error retrieving the number of games for {player_name}: {e}")
+        logging.error(f"Помилка отримання кількості ігор для {player_name}: {e}")
         return 0
 
 
@@ -540,9 +373,8 @@ def get_last_game_date(player_name):
 
         return max(dates) if dates else None
     except Exception as e:
-        logging.error(f"Error while retrieving the last match for player {player_name}: {e}")
+        logging.error(f"Помилка при пошуку останнього матчу гравця {player_name}: {e}")
         return None
-
 
 def update_rating_table(match_id, match_date, team1, team2, score1, score2):
     """Оновлення таблиці Rating з динамічним K-фактором і зниженням за неактивність"""
@@ -554,7 +386,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
         team2_players = get_team_players(team2, match_date)
 
         if not team1_players or not team2_players:
-            logging.warning(f"No players found for teams {team1} and {team2} on date {match_date}")
+            logging.warning(f"Не знайдено гравців для команд {team1} і {team2} на дату {match_date}")
             return []
 
         # Отримати поточні рейтинги
@@ -600,9 +432,9 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
 
         # ⚙️ Оновлення гравців, які грали
         for player, actual_score, expected_score in zip(
-                team1_players + team2_players,
-                [actual_team1] * len(team1_players) + [actual_team2] * len(team2_players),
-                [expected_team1] * len(team1_players) + [expected_team2] * len(team2_players)
+            team1_players + team2_players,
+            [actual_team1] * len(team1_players) + [actual_team2] * len(team2_players),
+            [expected_team1] * len(team1_players) + [expected_team2] * len(team2_players)
         ):
             old_rating = new_ratings.get(player, INITIAL_RATING)
             games_played = get_player_games_count(player)
@@ -632,8 +464,8 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
                 reduced_rating = max(1500, old_rating - 10)
                 new_ratings[player] = reduced_rating
                 changes.append(
-                    f"📉 {player}: has not played since {last_game_date.date()} "
-                    f"({days_inactive} days), rating {old_rating}→{reduced_rating}"
+                    f"📉 {player}: не грав з {last_game_date.date()} "
+                    f"({days_inactive} днів), рейтинг {old_rating}→{reduced_rating}"
                 )
 
         # 🧾 Додаємо новий рядок у таблицю Rating
@@ -643,12 +475,12 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
             row_to_add.append(new_ratings.get(player_name, INITIAL_RATING))
 
         rating_sheet.append_row(row_to_add)
-        logging.info(f"📝 Match {match_id} added, ratings updated")
+        logging.info(f"📝 Додано матч {match_id}, оновлено рейтинги")
 
         return changes
 
     except Exception as e:
-        logging.error(f"Error while updating the Rating table: {e}")
+        logging.error(f"Помилка при оновленні таблиці Rating: {e}")
         return []
 
 
@@ -656,7 +488,7 @@ def stats(update, context):
     """Команда для перегляду статистики гравця з графіком"""
     try:
         if not context.args:
-            update.message.reply_text("⚠️ Usage: /stats PlayerName")
+            update.message.reply_text("⚠️ Використання: /stats ІмяГравця")
             return
         if update.message.chat.type != 'private':
             update.message.reply_text("⚠️ Ого, маєш гарні яйця, але таким краще не хвастатись при всіх, го в лс")
@@ -666,7 +498,7 @@ def stats(update, context):
         current_ratings = get_current_ratings()
 
         if player_name not in current_ratings:
-            update.message.reply_text(f"⚠️ Player '{player_name}' not found")
+            update.message.reply_text(f"⚠️ Гравець '{player_name}' не знайдений")
             return
 
         current_rating = current_ratings[player_name]
@@ -675,23 +507,23 @@ def stats(update, context):
 
         # Визначити статус
         if games_played < 5:
-            status = "🔥 Rookie (fast adaptation)"
+            status = "🔥 Новачок (швидка адаптація)"
         elif games_played < 15:
-            status = "📈 Adapting"
+            status = "📈 Адаптується"
         elif games_played < 25:
-            status = "📊 Stabilizing"
+            status = "📊 Стабілізується"
         else:
-            status = "✅ Stable"
+            status = "✅ Стабільний"
 
-        message  = f"📊 Player Stats: {player_name}\n"
-        message += f"🏆 Current Rating: {current_rating}\n"
-        message += f"🎮 Matches Played: {games_played}\n"
-        message += f"⚡  K-factor: {k_factor}\n"
-        message += f"📈 Status: {status}\n"
+        message = f"📊 Статистика гравця: {player_name}\n"
+        message += f"🏆 Поточний рейтинг: {current_rating}\n"
+        message += f"🎮 Зіграно матчів: {games_played}\n"
+        message += f"⚡ K-фактор: {k_factor}\n"
+        message += f"📈 Статус: {status}\n"
 
         if games_played < 25:
             remaining_games = 25 - games_played
-            message += f"\n💡 Matches until full stabilization: {remaining_games}"
+            message += f"\n💡 До повної стабілізації: {remaining_games} матчів"
 
         update.message.reply_text(message)
 
@@ -704,15 +536,15 @@ def stats(update, context):
                     chart_buffer.seek(0)
                     update.message.reply_photo(
                         photo=chart_buffer,
-                        caption=f"📈 Rating dynamic: {player_name}"
+                        caption=f"📈 Динаміка рейтингу: {player_name}"
                     )
 
     except Exception as e:
         logging.error(f"Помилка в команді stats: {e}")
         if is_quota_exceeded_error(e):
-            update.message.reply_text("❌ Request limit to Google Sheets exceeded. Please try again in a minute.")
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
         else:
-            update.message.reply_text(f"⚠️ Error: {e}")
+            update.message.reply_text(f"⚠️ Помилка: {e}")
 
 
 def leaderboard(update, context):
@@ -721,32 +553,32 @@ def leaderboard(update, context):
         current_ratings = get_current_ratings()
 
         if not current_ratings:
-            update.message.reply_text("⚠️ No rating data available")
+            update.message.reply_text("⚠️ Немає даних про рейтинги")
             return
 
         # Сортувати за рейтингом
         sorted_players = sorted(current_ratings.items(), key=lambda x: x[1], reverse=True)
 
-        message = "🏆 Top players:\n\n"
+        message = "🏆 Топ гравців:\n\n"
         for i, (player, rating) in enumerate(sorted_players[:10], 1):
             games = get_player_games_count(player)
             if i == 1:
-                message += f"🥇 {player}: {rating} ({games} sets)\n"
+                message += f"🥇 {player}: {rating} ({games} ігор)\n"
             elif i == 2:
-                message += f"🥈 {player}: {rating} ({games} sets)\n"
+                message += f"🥈 {player}: {rating} ({games} ігор)\n"
             elif i == 3:
-                message += f"🥉 {player}: {rating} ({games} sets)\n"
+                message += f"🥉 {player}: {rating} ({games} ігор)\n"
             else:
-                message += f"{i}. {player}: {rating} ({games} sets)\n"
+                message += f"{i}. {player}: {rating} ({games} ігор)\n"
 
         update.message.reply_text(message)
 
     except Exception as e:
-        logging.error(f"Error in the leaderboard command: {e}")
+        logging.error(f"Помилка в команді leaderboard: {e}")
         if is_quota_exceeded_error(e):
-            update.message.reply_text("❌ Request limit to Google Sheets exceeded. Please try again in a minute.")
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
         else:
-            update.message.reply_text(f"⚠️ Error: {e}")
+            update.message.reply_text(f"⚠️ Помилка: {e}")
 
 
 def result(update, context):
@@ -760,7 +592,7 @@ def result(update, context):
         text = " ".join(context.args)
 
         if "-" not in text:
-            update.message.reply_text("⚠️ The command must contain a '-' between the teams.")
+            update.message.reply_text("⚠️ Команда має містити '-' між командами")
             return
 
         part1, part2 = [part.strip() for part in text.split("-", 1)]
@@ -768,32 +600,32 @@ def result(update, context):
         # В part1 останнє слово — рахунок1, все інше — команда1
         tokens1 = part1.rsplit(" ", 1)
         if len(tokens1) != 2:
-            update.message.reply_text("⚠️ Failed to recognize team 1 and its score.")
+            update.message.reply_text("⚠️ Не вдалося розпізнати команду 1 і рахунок")
             return
 
         team1 = tokens1[0].strip()
         try:
             score1 = int(tokens1[1])
         except ValueError:
-            update.message.reply_text("⚠️ The score for team 1 must be a number.")
+            update.message.reply_text("⚠️ Рахунок команди 1 має бути числом")
             return
 
         # В part2 перше слово — рахунок2, все інше — команда2
         tokens2 = part2.split(" ", 1)
         if len(tokens2) != 2:
-            update.message.reply_text("⚠️ Failed to recognize the score and team 2.")
+            update.message.reply_text("⚠️ Не вдалося розпізнати рахунок і команду 2")
             return
 
         try:
             score2 = int(tokens2[0])
         except ValueError:
-            update.message.reply_text("⚠️ The score for team 2 must be a number.")
+            update.message.reply_text("⚠️ Рахунок команди 2 має бути числом")
             return
 
         team2 = tokens2[1].strip()
 
         if not team1 or not team2:
-            update.message.reply_text("⚠️ Team names cannot be empty.")
+            update.message.reply_text("⚠️ Назви команд не можуть бути пустими")
             return
 
         # Поточна дата
@@ -802,7 +634,7 @@ def result(update, context):
         # Отримати всі дані з таблиці
         all_rows = match_sheet.get_all_values()
         if not all_rows:
-            update.message.reply_text("⚠️ Error accessing the sheet")
+            update.message.reply_text("⚠️ Помилка доступу до таблиці")
             return
 
         headers = all_rows[0]
@@ -824,7 +656,7 @@ def result(update, context):
         elif score2 > score1:
             winner = team2
         else:
-            winner = "Draw"
+            winner = "Нічия"
 
         # Запис у таблицю
         row_to_add = [match_id, today, match_number, team1, team2, score1, score2, winner]
@@ -841,7 +673,7 @@ def result(update, context):
         # Підсумковий рахунок за сьогодні
         wins = {}
         for row in today_matches:
-            if len(row) > 7 and row[7] and row[7] != "Draw":
+            if len(row) > 7 and row[7] and row[7] != "Нічия":
                 winner_team = row[7]
                 wins[winner_team] = wins.get(winner_team, 0) + 1
 
@@ -850,25 +682,25 @@ def result(update, context):
             wins[winner] = wins.get(winner, 0) + 1
 
         # Сформувати відповідь
-        message = f"✅ Result saved: {team1} {score1} — {score2} {team2}\n"
-        message += f"🏆 Winner: {winner}\n"
-        message += f"📅 Match #{match_number} for {today}\n"
+        message = f"✅ Збережено результат: {team1} {score1} — {score2} {team2}\n"
+        message += f"🏆 Переможець: {winner}\n"
+        message += f"📅 Матч #{match_number} за {today}\n"
 
         if wins:
-            message += f"\n📊 Wins today:\n"
+            message += f"\n📊 Перемоги за сьогодні:\n"
             for team, count in sorted(wins.items(), key=lambda x: x[1], reverse=True):
                 message += f"  {team}: {count}\n"
+
 
         update.message.reply_text(message)
 
     except Exception as e:
-        logging.error(f"Error in result command: {e}")
+        logging.error(f"Помилка в команді result: {e}")
         if is_quota_exceeded_error(e):
-            update.message.reply_text("❌ Google Sheets API quota exceeded. Please try again in a minute.")
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
         else:
-            update.message.reply_text(f"⚠️ Error: {e}\n"
-                                      f"Try the format: /result Team1 score1 - score2 Team2")
-
+            update.message.reply_text(f"⚠️ Помилка: {e}\n"
+                                      f"Спробуйте формат: /result Команда1 рахунок1 - рахунок2 Команда2")
 
 def delete(update, context):
     """Команда для видалення останнього матчу"""
@@ -880,7 +712,7 @@ def delete(update, context):
         # Отримати всі рядки з match_sheet
         all_rows = match_sheet.get_all_values()
         if len(all_rows) <= 1:
-            update.message.reply_text("⚠️ There is no data in the table to delete.")
+            update.message.reply_text("⚠️ У таблиці немає даних для видалення.")
             return
 
         headers = all_rows[0]
@@ -896,7 +728,7 @@ def delete(update, context):
                 deletable_indices.append(i + 2)  # +2 бо 1 — заголовки, ще 1 — зсув
 
         if not deletable_indices:
-            update.message.reply_text("⚠️ No entries found for today to delete.")
+            update.message.reply_text("⚠️ Немає записів за сьогодні для видалення.")
             return
 
         # Видалити останній рядок за сьогодні
@@ -905,7 +737,7 @@ def delete(update, context):
         match_id_to_delete = deleted_row[0] if deleted_row else None
 
         match_sheet.delete_rows(last_row_index)
-        logging.info(f"✅ Deleted row #{last_row_index} from Match Sheet")
+        logging.info(f"✅ Видалено з Match Sheet рядок #{last_row_index}")
 
         # Видалити з таблиці Rating за match_id
         try:
@@ -913,51 +745,48 @@ def delete(update, context):
             for i, row in enumerate(rating_rows[1:], start=2):  # Пропускаємо заголовок
                 if row and row[0] == match_id_to_delete:
                     rating_sheet.delete_rows(i)
-                    logging.info(f"✅ Deleted row #{i} from Rating (match_id={match_id_to_delete})")
+                    logging.info(f"✅ Видалено з Rating рядок #{i} (match_id={match_id_to_delete})")
                     break
             else:
-                logging.warning(f"⚠️ match_id {match_id_to_delete} not found in Rating")
+                logging.warning(f"⚠️ match_id {match_id_to_delete} не знайдено в Rating")
 
-            update.message.reply_text("✅ Last match has been deleted.")
+            update.message.reply_text("✅ Видалено останній матч.")
 
         except Exception as e:
-            logging.error(f"Error while deleting from Rating: {e}")
-            update.message.reply_text("⚠️ Deleted from Match Sheet, but not from Rating")
+            logging.error(f"Помилка при видаленні з Rating: {e}")
+            update.message.reply_text("⚠️ Видалено з Match Sheet, але не з Rating")
 
     except Exception as e:
-        logging.error(f"Error in delete command: {e}")
+        logging.error(f"Помилка в команді delete: {e}")
         if is_quota_exceeded_error(e):
-            update.message.reply_text("❌ Google Sheets API quota exceeded. Please try again in a minute.")
+            update.message.reply_text("❌ Перевищено ліміт запитів до Google Sheets. Спробуй за хвилину.")
         else:
             update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
-
 
 def help_command(update, context):
     """Команда допомоги"""
     help_text = """
-🏐Volleyball Bot Commands:
+🏐 Команди волейбольного бота:
 
-/result Team1 score1 - score2 Team2
-    Example: /result Blue 15 - 10 Red
+/result Команда1 рахунок1 - рахунок2 Команда2
+   Приклад: /result Сині 15 - 10 Червоні
 
-/stats PlayerName
-    Example: /stats Oleksii
+/stats ІмяГравця
+   Приклад: /stats Олексій
 
-/leaderboard – show the top players
+/leaderboard - показати топ гравців
 
-/delete – delete the last match (only for today)
+/delete - видалити останній матч (тільки сьогодні)
 
-/generate_teams YYYY-MM-DD - generate teams for the specified date  
-   Example: /generate_teams 2025-07-20  
+/help - показати цю допомогу
 
-/help – show this help message
+📊 Система рейтингів:
+• Початковий рейтинг: 1500
+• Новачки мають високий K-фактор (швидше змінюється рейтинг)
+• Враховується сила суперника та різниця в рахунку
+• Рейтинг змінюється ТІЛЬКИ у гравців які фактично грали
+• Якщо гравець не грає більше ніж 2 тижні, то його рейтинг поступово починає знижуватись до початкового
 
-📊 Rating System Overview:
-• Initial rating: 1500
-• New players have a high K-factor (rating changes faster)
-• Opponent strength and score difference are taken into account
-• Rating changes ONLY for players who actually played
-• If a player hasn’t played for more than 2 weeks, their rating gradually decreases back to the starting point
 """
     update.message.reply_text(help_text)
 
@@ -965,9 +794,10 @@ def help_command(update, context):
 # Ініціалізація бота
 bot_token = os.environ.get("BOT_TOKEN")
 if not bot_token:
-    raise ValueError("❌ BOT_TOKEN not found in environment variables")
+    raise ValueError("BOT_TOKEN не знайдено в змінних середовища")
 
 bot = Bot(token=bot_token)
+
 
 # Налаштування диспетчера
 dispatcher = Dispatcher(bot, None, workers=4)
@@ -977,8 +807,7 @@ dispatcher.add_handler(CommandHandler("stats", stats))
 dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
-dispatcher.add_handler(CommandHandler("generate_teams", generate_teams))
-dispatcher.add_handler(CallbackQueryHandler(button_handler))
+
 
 
 # Webhook endpoint
@@ -994,12 +823,13 @@ def webhook():
 
         update = Update.de_json(json_data, bot)
         dispatcher.process_update(update)
-        logging.info(f"📥 Update received: {update.update_id}")
+        logging.info(f"📥 Отримано update: {update.update_id}")
 
-        logging.info(f"✅ Update {update.update_id} processed successfully")
+
+        logging.info(f"✅ Update {update.update_id} оброблено успішно")
         return 'OK'
     except TimeoutError:
-        logging.error("⛔ Timeout while processing update")
+        logging.error("⛔ Таймаут при обробці update")
         return 'TIMEOUT', 504
     except Exception as e:
         logging.error(f"Webhook error: {e}", exc_info=True)
@@ -1026,7 +856,6 @@ def health_check():
         'sheets_connected': spreadsheet is not None
     }
 
-
 # Налаштування webhook при запуску
 def setup_webhook():
     try:
@@ -1037,7 +866,7 @@ def setup_webhook():
 
         webhook_url = f"https://{hostname}/{bot_token}"
         bot.set_webhook(url=webhook_url)
-        logging.info(f"✅ Webhook successfully set to:{webhook_url}")
+        logging.info(f"Webhook встановлено на: {webhook_url}")
 
         # Перевірити чи webhook встановлено
         webhook_info = bot.get_webhook_info()
@@ -1045,7 +874,7 @@ def setup_webhook():
 
 
     except Exception as e:
-        logging.error(f"❌ Error setting up the webhook: {e}")
+        logging.error(f"Помилка встановлення webhook: {e}")
 
 
 if __name__ == "__main__":
