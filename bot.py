@@ -151,17 +151,27 @@ def generate_teams(update, context):
             return
 
         if not context.args:
-            update.message.reply_text("⚠️ Please specify the date in the format: /generate_teams YYYY-MM-DD")
+            update.message.reply_text("⚠️ Usage: /generate_teams YYYY-MM-DD [number_of_teams]")
             return
 
         game_date = context.args[0]
+
+        try:
+            num_teams = int(context.args[1]) if len(context.args) > 1 else 2
+            if num_teams < 2:
+                update.message.reply_text("⚠️ Number of teams must be at least 2.")
+                return
+        except ValueError:
+            update.message.reply_text("⚠️ Number of teams must be an integer.")
+            return
+
         players = get_team_candidates()
         if not players:
             update.message.reply_text("⚠️ No players are marked as ready to play.")
             return
 
-        teams, team_sums, team_counts = regenerate_teams_logic(players)
-        team_names = [faker.word().capitalize() for _ in range(2)]
+        teams, team_sums, team_counts = regenerate_teams_logic(players, num_teams=num_teams)
+        team_names = [faker.word().lower() for _ in range(num_teams)]  # маленькі назви
 
         text = f"📅 Teams for {game_date}:\n"
         for i, team in enumerate(teams):
@@ -171,9 +181,9 @@ def generate_teams(update, context):
             avg_score = round(team_sums[i] / team_counts[i] / 100, 2)
             text += f"Average rating: {avg_score}_\n"
 
-        # Зберігаємо у пам'ять
-        message_id = update.message.message_id
+        # Cache for confirmation
         chat_id = update.message.chat_id
+        message_id = update.message.message_id
         pending_teams[chat_id] = {
             "date": game_date,
             "teams": teams,
@@ -183,7 +193,6 @@ def generate_teams(update, context):
             "message_id": message_id
         }
 
-        # Кнопки
         keyboard = [
             [InlineKeyboardButton("✅ Confirm", callback_data="confirm_teams")],
             [InlineKeyboardButton("🔁 Regenerate", callback_data="regenerate_teams")]
@@ -191,6 +200,10 @@ def generate_teams(update, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         update.message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+
+    except Exception as e:
+        logging.error(f"Error in /generate_teams: {e}")
+        update.message.reply_text("❌ An error occurred while generating the teams.")
 
     except Exception as e:
         logging.error(f"Error in /generate_teams: {e}")
@@ -224,6 +237,15 @@ def button_handler(update, context):
         teams_worksheet.append_row(row_data)
 
         query.edit_message_text("✅ Teams have been successfully confirmed and saved.")
+        text = f"📅 Confirmed teams for {data['date']}:\n"
+        for i, team in enumerate(data["teams"]):
+            text += f"\n🏐 *Team {i + 1}* ({data['team_names'][i]}):\n"
+            for name, _ in team:
+                text += f"• {name}\n"
+            avg_score = round(data["sums"][i] / data["counts"][i] / 100, 2)
+            text += f"Average rating: {avg_score}_\n"
+
+        context.bot.send_message(chat_id, text, parse_mode="Markdown")
         context.bot.send_message(chat_id, "🎉 Teams have been created! Good luck in the game!")
         pending_teams.pop(chat_id)
 
@@ -686,7 +708,7 @@ def stats(update, context):
         message  = f"📊 Player Stats: {player_name}\n"
         message += f"🏆 Current Rating: {current_rating}\n"
         message += f"🎮 Matches Played: {games_played}\n"
-        message += f"⚡  K-factor: {k_factor}\n"
+        message += f"⚡ K-factor: {k_factor}\n"
         message += f"📈 Status: {status}\n"
 
         if games_played < 25:
