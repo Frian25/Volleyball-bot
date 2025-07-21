@@ -783,6 +783,36 @@ def leaderboard(update, context):
         else:
             update.message.reply_text(f"⚠️ Error: {e}")
 
+def get_existing_teams(date=None):
+    """Отримати список команд з аркуша Teams на вказану дату"""
+    try:
+        teams_sheet = spreadsheet.worksheet("Teams")
+        all_rows = teams_sheet.get_all_values()
+        headers = all_rows[0]
+        data = all_rows[1:]
+
+        team_names = set()
+
+        for row in data:
+            if not row:
+                continue
+
+            # Перевірка дати, якщо вказана
+            if date:
+                date_idx = headers.index("date") if "date" in headers else 0
+                if len(row) <= date_idx or row[date_idx] != date:
+                    continue
+
+            for i in range(1, 10):  # до 10 команд
+                col_name = f"team_{i}"
+                if col_name in headers:
+                    idx = headers.index(col_name)
+                    if idx < len(row) and row[idx]:
+                        team_names.add(row[idx].strip())
+        return team_names
+    except Exception as e:
+        logging.error(f"Error fetching teams: {e}")
+        return set()
 
 def result(update, context):
     """Команда для додавання результату матчу"""
@@ -838,6 +868,11 @@ def result(update, context):
         all_rows = match_sheet.get_all_values()
         if not all_rows:
             update.message.reply_text("⚠️ Error accessing the sheet")
+            return
+
+        existing_teams = get_existing_teams(today)
+        if team1 not in existing_teams or team2 not in existing_teams:
+            update.message.reply_text("⚠️ Одна або обидві команди не знайдені в таблиці Teams.")
             return
 
         headers = all_rows[0]
