@@ -694,7 +694,7 @@ def stats(update, context):
             update.message.reply_text("⚠️ Usage: /stats PlayerName")
             return
         if update.message.chat.type != 'private':
-            update.message.reply_text("⚠️ Ого, маєш гарні яйця, але таким краще не хвастатись при всіх, го в лс")
+            update.message.reply_text("⚠️ This command is meant for private chats only.")
             return
 
         player_name = " ".join(context.args)
@@ -743,7 +743,7 @@ def stats(update, context):
                     )
 
     except Exception as e:
-        logging.error(f"Помилка в команді stats: {e}")
+        logging.error(f"Error in comand stats: {e}")
         if is_quota_exceeded_error(e):
             update.message.reply_text("❌ Request limit to Google Sheets exceeded. Please try again in a minute.")
         else:
@@ -818,7 +818,7 @@ def result(update, context):
     """Команда для додавання результату матчу"""
     try:
         if update.message.chat.type == 'private':
-            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.")
+            update.message.reply_text("⚠️ This command is meant for group chats only.")
             return
 
         # Об'єднуємо аргументи у рядок
@@ -872,7 +872,7 @@ def result(update, context):
 
         existing_teams = get_existing_teams(today)
         if team1 not in existing_teams or team2 not in existing_teams:
-            update.message.reply_text("⚠️ Одна або обидві команди не знайдені в таблиці Teams.")
+            update.message.reply_text("⚠️ One or both commands couldn't be found in the database")
             return
 
         headers = all_rows[0]
@@ -944,7 +944,7 @@ def delete(update, context):
     """Команда для видалення останнього матчу"""
     try:
         if update.message.chat.type == 'private':
-            update.message.reply_text("⚠️ Ти кого хочеш наїбати? Напиши в групу хай всі побачать.")
+            update.message.reply_text("⚠️ This command is meant for private chats only")
             return
 
         # Отримати всі рядки з match_sheet
@@ -999,7 +999,7 @@ def delete(update, context):
         if is_quota_exceeded_error(e):
             update.message.reply_text("❌ Google Sheets API quota exceeded. Please try again in a minute.")
         else:
-            update.message.reply_text(f"⚠️ Помилка при видаленні: {e}")
+            update.message.reply_text(f"⚠️ Delete error: {e}")
 
 
 def help_command(update, context):
