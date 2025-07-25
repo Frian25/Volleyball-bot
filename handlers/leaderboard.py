@@ -19,13 +19,13 @@ def leaderboard(update: Update, context: CallbackContext):
         for i, (player, rating) in enumerate(sorted_players[:10], 1):
             games = get_player_games_count(player)
             if i == 1:
-                message += f"🥇 {player}: {rating} ({games} matches)\n"
+                message += f"🥇 {player}: {rating} ({games} sets)\n"
             elif i == 2:
-                message += f"🥈 {player}: {rating} ({games} matches)\n"
+                message += f"🥈 {player}: {rating} ({games} sets)\n"
             elif i == 3:
-                message += f"🥉 {player}: {rating} ({games} matches)\n"
+                message += f"🥉 {player}: {rating} ({games} sets)\n"
             else:
-                message += f"{i}. {player}: {rating} ({games} matches)\n"
+                message += f"{i}. {player}: {rating} ({games} sets)\n"
 
         update.message.reply_text(message)
 
