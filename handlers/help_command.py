@@ -1,36 +1,36 @@
 from telegram import Update
 from telegram.ext import CallbackContext
 
-from services.rating_logic import get_current_ratings, get_player_games_count
-from utils.misc import is_quota_exceeded_error
+def help_command(update: Update, context: CallbackContext):
+    help_text = """
+🏐 *Volleyball Rating Bot Commands*
 
+/generate_teams YYYY-MM-DD [num_teams]  
+→ Generate balanced teams for the specified date  
+Example: `/generate_teams 2025-07-28 2`
 
-def leaderboard(update: Update, context: CallbackContext):
-    try:
-        current_ratings = get_current_ratings()
+/result Team1 score1 - score2 Team2  
+→ Submit match result  
+Example: `/result Red 21 - 18 Blue`
 
-        if not current_ratings:
-            update.message.reply_text("⚠️ No rating data available.")
-            return
+/delete  
+→ Delete the last match of today (admin/group only)
 
-        sorted_players = sorted(current_ratings.items(), key=lambda x: x[1], reverse=True)
+/stats PlayerName  
+→ Show player's rating, K-factor, matches played  
+Example: `/stats John Smith`
 
-        message = "🏆 Top Players:\n\n"
-        for i, (player, rating) in enumerate(sorted_players[:10], 1):
-            games = get_player_games_count(player)
-            if i == 1:
-                message += f"🥇 {player}: {rating} ({games} matches)\n"
-            elif i == 2:
-                message += f"🥈 {player}: {rating} ({games} matches)\n"
-            elif i == 3:
-                message += f"🥉 {player}: {rating} ({games} matches)\n"
-            else:
-                message += f"{i}. {player}: {rating} ({games} matches)\n"
+/leaderboard  
+→ Show top 10 players by rating
 
-        update.message.reply_text(message)
+/help  
+→ Show this help message
 
-    except Exception as e:
-        if is_quota_exceeded_error(e):
-            update.message.reply_text("❌ Google Sheets quota exceeded. Try again shortly.")
-        else:
-            update.message.reply_text(f"⚠️ Error: {e}")
+📊 *Rating System*:
+• Starting rating: 1500  
+• Dynamic K-factor (adapts based on matches played)  
+• Score margin affects rating changes  
+• Ratings decay for inactive players  
+• Only active players in match get updated
+"""
+    update.message.reply_text(help_text, parse_mode="Markdown")
