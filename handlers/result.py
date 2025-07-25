@@ -29,7 +29,7 @@ def result(update: Update, context: CallbackContext):
     try:
         score1 = int(tokens1[1])
     except ValueError:
-        update.message.reply_text("⚠️ Score for team 1 must be a number.")
+        update.message.reply_text("⚠️ Use format: Team1 score1 - score2 Team2")
         return
 
     tokens2 = part2.split(" ", 1)
@@ -40,7 +40,7 @@ def result(update: Update, context: CallbackContext):
     try:
         score2 = int(tokens2[0])
     except ValueError:
-        update.message.reply_text("⚠️ Score for team 2 must be a number.")
+        update.message.reply_text("⚠️ Use format: Team1 score1 - score2 Team2.")
         return
 
     team2 = tokens2[1].strip()
@@ -64,3 +64,49 @@ def result(update: Update, context: CallbackContext):
 
     headers = all_rows[0] if all_rows else []
     data_rows = all_rows[1:]
+
+    date_idx = headers.index("date") if "date" in headers else 1
+    today_matches = [r for r in data_rows if len(r) > date_idx and r[date_idx] == today]
+    match_number = len(today_matches) + 1
+    match_id = str(uuid.uuid4())[:8]
+
+    if score1 > score2:
+        winner = team1
+    elif score2 > score1:
+        winner = team2
+    else:
+        winner = "Draw"
+
+    row_to_add = [match_id, today, match_number, team1, team2, score1, score2, winner]
+
+    while len(row_to_add) > len(headers):
+        headers.append(f"col_{len(headers)}")
+
+    try:
+        match_sheet.append_row(row_to_add)
+        rating_changes = update_rating_table(match_id, today, team1, team2, score1, score2)
+    except Exception as e:
+        if is_quota_exceeded_error(e):
+            update.message.reply_text("❌ Google Sheets quota exceeded.")
+        else:
+            update.message.reply_text(f"⚠️ Error: {e}")
+        return
+
+    # Count team wins
+    wins = {}
+    for row in today_matches:
+        if len(row) > 7 and row[7] and row[7] != "Draw":
+            wins[row[7]] = wins.get(row[7], 0) + 1
+    if winner != "Draw":
+        wins[winner] = wins.get(winner, 0) + 1
+
+    message = f"✅ Result saved: {team1} {score1} - {score2} {team2}\n"
+    message += f"🏆 Winner: {winner}\n"
+    message += f"📅 Match #{match_number} for {today}\n"
+
+    if wins:
+        message += "\n📊 Wins today:\n"
+        for team, count in sorted(wins.items(), key=lambda x: x[1], reverse=True):
+            message += f"  {team}: {count}\n"
+
+    update.message.reply_text(message)
