@@ -5,7 +5,7 @@ from faker import Faker
 from services.team_balancer import get_team_candidates, regenerate_teams_logic
 from config import INCOMPATIBLE_PAIRS
 
-faker = Faker("en_US")  # ⚠️ faker тепер англійською
+faker = Faker("uk_UA")  # англійською en_US
 pending_teams = {}
 
 # 🔁 Команда генерації команд
