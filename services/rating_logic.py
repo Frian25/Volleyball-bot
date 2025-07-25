@@ -82,14 +82,24 @@ def calculate_dynamic_k_factor(games_played, rating=None):
 
 def get_score_multiplier(winner, loser):
     diff = winner - loser
-    if diff >= 8:
-        return 1.5
-    elif diff >= 5:
-        return 1.2
-    elif diff >= 3:
-        return 1.0
+    if winner >= 25:
+        if diff >= 8:
+            return 1.7
+        elif diff >= 5:
+            return 1.4
+        elif diff >= 3:
+            return 1.1
+        else:
+            return 0.9
     else:
-        return 0.8
+        if diff >= 8:
+            return 1.5
+        elif diff >= 5:
+            return 1.2
+        elif diff >= 3:
+            return 1.0
+        else:
+            return 0.8
 
 
 def get_team_players(team_name, match_date):
@@ -155,8 +165,14 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
 
     avg1 = get_team_average_rating(team1_players, current_ratings)
     avg2 = get_team_average_rating(team2_players, current_ratings)
-    exp1 = calculate_expected_score(avg1, avg2)
-    exp2 = 1 - exp1
+
+    # якщо різниця < 3%, очікування = 0.5
+    diff_percent = abs(avg1 - avg2) / ((avg1 + avg2) / 2)
+    if diff_percent < 0.03:
+        exp1 = exp2 = 0.5
+    else:
+        exp1 = calculate_expected_score(avg1, avg2)
+        exp2 = 1 - exp1
 
     actual1, actual2 = 0.5, 0.5
     if score1 > score2:
@@ -165,7 +181,6 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
         actual1, actual2 = 0, 1
 
     multiplier = get_score_multiplier(max(score1, score2), min(score1, score2))
-
     new_ratings = current_ratings.copy()
 
     for player, actual, expected in zip(
@@ -187,7 +202,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
             if inactive_days > 16 and current_ratings[player] > INITIAL_RATING:
                 new_ratings[player] = max(INITIAL_RATING, current_ratings[player] - 10)
 
-    # Додаємо новий рядок у Rating
+    # Оновлюємо заголовки
     headers = rating_sheet.row_values(1)
     if not headers:
         headers = ['match_id', 'date']
@@ -196,6 +211,7 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
             headers.append(p)
     rating_sheet.update('1:1', [headers])
 
+    # Додаємо новий рядок
     row = [match_id, match_date]
     for p in headers[2:]:
         row.append(new_ratings.get(p, INITIAL_RATING))
