@@ -2,6 +2,7 @@ from telegram import Update
 from telegram.ext import CallbackContext
 
 from services.appeal_service import process_poll_results
+from services.sheets import  appeals_sheet
 
 
 def poll_answer_handler(update: Update, context: CallbackContext):
@@ -9,6 +10,17 @@ def poll_answer_handler(update: Update, context: CallbackContext):
     # Для анонімних голосувань цей хендлер не спрацьовує
     pass
 
+def get_chat_id_by_poll_id(poll_id):
+    try:
+        all_rows = appeals_sheet.get_all_values()
+
+        for row in all_rows[1:]:
+            if len(row) >= 6 and row[3] == poll_id:
+                return int(row[5])  # chat_id — колонка 6
+        return None
+    except Exception as e:
+        print(f"Error while getting chat_id: {e}")
+        return None
 
 def poll_handler(update: Update, context: CallbackContext):
     """Обробляє оновлення голосувань, включаючи їх завершення"""
@@ -33,8 +45,6 @@ def poll_handler(update: Update, context: CallbackContext):
         # Обробляємо результати
         winner = process_poll_results(poll.id, poll_results)
 
-        # Відправляємо повідомлення про результати
-        chat_id = update.effective_chat.id
 
         if total_voter_count < 6:
             message = f"📊 Poll ended!\n\n"
@@ -72,6 +82,11 @@ def poll_handler(update: Update, context: CallbackContext):
             for option, votes in sorted(poll_results.items(), key=lambda x: x[1], reverse=True):
                 percentage = (votes / total_voter_count * 100) if total_voter_count > 0 else 0
                 message += f"• {option}: {votes} ({percentage:.1f}%)\n"
+
+        chat_id = get_chat_id_by_poll_id(poll.id)
+        if not chat_id:
+            print("⚠️ Chat ID not found for poll.")
+            return
 
         context.bot.send_message(
             chat_id=chat_id,

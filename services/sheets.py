@@ -19,6 +19,8 @@ spreadsheet = client.open_by_url(SPREADSHEET_URL)
 rating_sheet = spreadsheet.worksheet("Rating")
 match_sheet = spreadsheet.worksheet("Matches")
 teams_sheet = spreadsheet.worksheet("Teams")
+appeals_sheet = spreadsheet.worksheet("Appeals")
+mvp_results_sheet = spreadsheet.worksheet("MVP Results")
 
 # Прості кеші
 cache = {

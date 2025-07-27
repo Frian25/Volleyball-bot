@@ -93,7 +93,7 @@ def create_appeal_record(date, teams_data):
             # Створюємо лист, якщо його немає
             appeals_sheet = spreadsheet.add_worksheet(title="Appeals", rows=100, cols=10)
             # Додаємо заголовки
-            headers = ["appeal_id", "date", "team_name", "poll_id", "message_id", "status", "results"]
+            headers = ["appeal_id", "date", "team_name", "poll_id", "message_id", "chat_id", "status", "results"]
             appeals_sheet.append_row(headers)
 
         return appeal_id

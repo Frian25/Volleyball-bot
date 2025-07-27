@@ -2,7 +2,7 @@ from telegram import Update, Poll
 from telegram.ext import CallbackContext
 from datetime import datetime, timedelta
 
-from services.sheets import spreadsheet, get_existing_teams
+from services.sheets import spreadsheet, appeals_sheet, get_existing_teams
 from services.appeal_service import (
     can_create_appeal_today,
     get_today_teams_and_players,
@@ -70,6 +70,19 @@ def appeal(update: Update, context: CallbackContext):
                 explanation="Pick up to 3 top players from this team today. At least 6 votes are needed to validate the results."
             )
 
+            # Оновити Appeals — вставити chat_id та message_id
+            try:
+                appeals_sheet = spreadsheet.worksheet("Appeals")
+                all_rows = appeals_sheet.get_all_values()
+
+                for i, row in enumerate(all_rows[1:], start=2):  # починаємо з 2 бо заголовок
+                    if len(row) >= 4 and row[3] == poll_message.poll.id:  # колонка з poll_id
+                        appeals_sheet.update_cell(i, 5, poll_message.message_id)  # message_id (5-та колонка)
+                        appeals_sheet.update_cell(i, 6, poll_message.chat.id)  # chat_id (6-та колонка)
+                        break
+            except Exception as e:
+                print(f"❌ Error while saving poll data: {e}")
+
             polls_created.append({
                 'team': team_name,
                 'poll_id': poll_message.poll.id,
@@ -82,7 +95,6 @@ def appeal(update: Update, context: CallbackContext):
             return
 
         # Зберігаємо інформацію про створені poll'и
-        appeals_sheet = spreadsheet.worksheet("Appeals")
         for poll_info in polls_created:
             appeals_sheet.append_row([
                 appeal_id,
@@ -90,6 +102,7 @@ def appeal(update: Update, context: CallbackContext):
                 poll_info['team'],
                 poll_info['poll_id'],
                 poll_info['message_id'],
+                chat_id,
                 'active',
                 ''  # results (буде заповнено після завершення)
             ])
