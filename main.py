@@ -3,7 +3,7 @@ import time
 import os
 from flask import Flask, request
 from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, CallbackQueryHandler
+from telegram.ext import Dispatcher, CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
 
 from config import BOT_TOKEN, WEBHOOK_PATH, WEBHOOK_URL
 from handlers.generate_teams import generate_teams
@@ -13,6 +13,8 @@ from handlers.stats import stats
 from handlers.leaderboard import leaderboard
 from handlers.help_command import help_command
 from handlers.button_handler import button_handler
+from handlers.appeal import appeal
+from handlers.poll_handler import poll_handler, poll_answer_handler
 
 # 🔧 Налаштування логування
 logging.basicConfig(
@@ -37,7 +39,12 @@ dispatcher.add_handler(CommandHandler("stats", stats))
 dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
+dispatcher.add_handler(CommandHandler("appeal", appeal))
 dispatcher.add_handler(CallbackQueryHandler(button_handler))
+
+# 🆕 Обробники для голосувань
+dispatcher.add_handler(PollHandler(poll_handler))
+dispatcher.add_handler(PollAnswerHandler(poll_answer_handler))
 
 # 🚀 Webhook endpoint
 @app.route(WEBHOOK_PATH, methods=["POST"])

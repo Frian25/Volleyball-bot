@@ -7,3 +7,4 @@ matplotlib
 requests
 pandas
 faker
+python-dateutil==2.8.2
