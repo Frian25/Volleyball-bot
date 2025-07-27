@@ -7,7 +7,7 @@ import io
 
 from config import (
     INITIAL_RATING, MAX_K_FACTOR, MIN_K_FACTOR, STABILIZATION_GAMES,
-    HIGH_RATING_THRESHOLD, HIGH_RATING_K_MULTIPLIER
+    HIGH_RATING_THRESHOLD, HIGH_RATING_K_MULTIPLIER, PLAYER_IMBALANCE_FACTOR,
 )
 
 from services.sheets import rating_sheet, teams_sheet, match_sheet, cache
@@ -155,8 +155,14 @@ def calculate_new_rating(old, actual, expected, games, multiplier):
 
 def update_rating_table(match_id, match_date, team1, team2, score1, score2):
     dt = datetime.strptime(match_date, "%Y-%m-%d")
-    team1_players = [p.strip() for p in get_team_players(team1, match_date)]
-    team2_players = [p.strip() for p in get_team_players(team2, match_date)]
+    team1_players = [p.strip() for p in get_team_players(team1, match_date) if p.strip()]
+    team2_players = [p.strip() for p in get_team_players(team2, match_date) if p.strip()]
+
+    ### НОВИЙ КОД ###
+    # Отримуємо кількість гравців у кожній команді
+    num_players1 = len(team1_players)
+    num_players2 = len(team2_players)
+
     current_ratings = get_current_ratings()
 
     for p in team1_players + team2_players:
@@ -166,12 +172,24 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
     avg1 = get_team_average_rating(team1_players, current_ratings)
     avg2 = get_team_average_rating(team2_players, current_ratings)
 
+    # Розраховуємо коригування на основі різниці в кількості гравців.
+    # Команда з меншою кількістю гравців отримує ВІРТУАЛЬНИЙ ШТРАФ до рейтингу,
+    # щоб її перемога вважалася більшим "апсетом" і давала більше очок.
+    player_difference = num_players1 - num_players2
+    adjustment = player_difference * PLAYER_IMBALANCE_FACTOR
+
+    effective_avg1 = avg1 + adjustment
+    effective_avg2 = avg2 - adjustment
+
     # якщо різниця < 3%, очікування = 0.5
-    diff_percent = abs(avg1 - avg2) / ((avg1 + avg2) / 2)
+    # Використовуємо ЕФЕКТИВНІ рейтинги для розрахунку
+    diff_percent = abs(effective_avg1 - effective_avg2) / ((effective_avg1 + effective_avg2) / 2) if (
+                                                                                                                 effective_avg1 + effective_avg2) > 0 else 0
     if diff_percent < 0.03:
         exp1 = exp2 = 0.5
     else:
-        exp1 = calculate_expected_score(avg1, avg2)
+        # Використовуємо ЕФЕКТИВНІ рейтинги для розрахунку
+        exp1 = calculate_expected_score(effective_avg1, effective_avg2)
         exp2 = 1 - exp1
 
     actual1, actual2 = 0.5, 0.5
@@ -184,9 +202,9 @@ def update_rating_table(match_id, match_date, team1, team2, score1, score2):
     new_ratings = current_ratings.copy()
 
     for player, actual, expected in zip(
-        team1_players + team2_players,
-        [actual1] * len(team1_players) + [actual2] * len(team2_players),
-        [exp1] * len(team1_players) + [exp2] * len(team2_players)
+            team1_players + team2_players,
+            [actual1] * num_players1 + [actual2] * num_players2,
+            [exp1] * num_players1 + [exp2] * num_players2
     ):
         old = new_ratings.get(player, INITIAL_RATING)
         games = get_player_games_count(player)

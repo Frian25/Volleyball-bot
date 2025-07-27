@@ -526,7 +526,7 @@ def get_player_games_count(player_name):
                         if player_name in team1_players or player_name in team2_players:
                             games_count += 1
                             break
-
+        print(f"🧮 [games_count] {player_name}: {games_count}")
         return games_count
     except Exception as e:
         logging.error(f"Error retrieving the number of games for {player_name}: {e}")
