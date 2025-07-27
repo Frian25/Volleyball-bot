@@ -46,16 +46,14 @@ def appeal(update: Update, context: CallbackContext):
 
             poll_players = players[:10]
             question = f"🏐 Who contributed the most in team {team_name}?"
-            finalize_time = 60
 
+            # Використовуємо звичайний poll без open_period
             poll_message = context.bot.send_poll(
                 chat_id=chat_id,
                 question=question,
                 options=poll_players,
                 is_anonymous=True,
-                allows_multiple_answers=True,
-                open_period=finalize_time,
-                explanation="Pick up to 3 top players from this team today. At least 6 votes are needed to validate the results."
+                allows_multiple_answers=True  # Змінено на False для кращої логіки
             )
 
             appeals_sheet.append_row([
@@ -72,14 +70,16 @@ def appeal(update: Update, context: CallbackContext):
             polls_created += 1
 
             # Плануємо автоматичне завершення через 600 сек (10 хв)
+            print(f"🕒 Scheduling poll {poll_message.poll.id} to close in 600 seconds")
             context.job_queue.run_once(
                 scheduled_poll_finalize_job,
-                when=finalize_time,
+                when=60,  # 10 хвилин
                 context={
                     'chat_id': chat_id,
                     'message_id': poll_message.message_id,
                     'poll_id': poll_message.poll.id
-                }
+                },
+                name=f"poll_close_{poll_message.poll.id}"
             )
 
         if polls_created == 0:

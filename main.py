@@ -49,6 +49,7 @@ dispatcher.add_handler(CallbackQueryHandler(button_handler))
 dispatcher.add_handler(PollHandler(poll_handler))
 dispatcher.add_handler(PollAnswerHandler(poll_answer_handler))
 
+
 # 🚀 Webhook endpoint
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
@@ -57,10 +58,12 @@ def webhook():
     dispatcher.process_update(update)
     return "OK"
 
+
 # 🔍 Health check
 @app.route("/", methods=["GET"])
 def root():
     return "✅ Volleyball Rating Bot is running!"
+
 
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -68,6 +71,7 @@ def health_check():
         "status": "healthy",
         "timestamp": time.time()
     }
+
 
 # 🔌 Webhook setup
 def setup_webhook():
@@ -77,11 +81,20 @@ def setup_webhook():
     else:
         logging.warning("⚠️ WEBHOOK_URL is not set")
 
+
+# 🏃‍♂️ Запуск JobQueue в окремому потоці
+def start_job_queue():
+    job_queue.start()
+    logging.info("✅ JobQueue started")
+
+
 # ▶️ Запуск Flask і JobQueue
 if __name__ == "__main__":
     setup_webhook()
 
+    # ▶️ Запускаємо JobQueue в окремому потоці
+    job_thread = Thread(target=start_job_queue, daemon=True)
+    job_thread.start()
+
     # ▶️ Запускаємо Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-    # 🧷 Очікуємо завершення job потоку (не обов’язково, але добре мати)
