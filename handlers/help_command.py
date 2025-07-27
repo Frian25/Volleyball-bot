@@ -16,7 +16,7 @@ Example: `/result Red 21 - 18 Blue`
 /appeal  
 → Create daily MVP voting (group chat only)  
 → Anonymous polls for each team, 1 hour duration  
-→ +5 rating points per match if player gets 66%+ votes
+→ bonus rating points per match if player gets 66%+ votes
 
 /delete  
 → Delete the last match of today (admin/group only)
@@ -43,6 +43,6 @@ Example: `/stats John Smith`
 • Anonymous voting for each team (1 hour)
 • Minimum 6 votes required for validation
 • 66%+ consensus needed for bonus
-• +5 rating points per match played today
+• bonus points per match played today
 """
     update.message.reply_text(help_text, parse_mode="Markdown")

@@ -173,7 +173,7 @@ def apply_bonus_rating(player_name, date):
         if matches_today == 0:
             return 0
 
-        bonus_points = 5 * matches_today
+        bonus_points = 3 * matches_today
 
         # Оновлюємо рейтинг у таблиці Rating
         rating_rows = rating_sheet.get_all_values()

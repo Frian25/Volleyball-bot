@@ -98,7 +98,7 @@ def appeal(update: Update, context: CallbackContext):
         success_message += "📊 Conditions for awarding bonus points:\n"
         success_message += "• At least 6 votes in the poll\n"
         success_message += "• 66%+ votes for one player\n"
-        success_message += "• +5 rating points for each match played today\n\n"
+        success_message += "• bonus points for each match played today\n\n"
         success_message += "⏰ Voting will be open for 10 minutes."
 
         update.message.reply_text(success_message)

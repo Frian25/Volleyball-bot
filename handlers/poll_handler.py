@@ -53,7 +53,7 @@ def poll_handler(update: Update, context: CallbackContext):
             message = f"📊 Poll ended!\n\n"
             message += f"🏆 MVP selected: **{winner}**\n"
             message += f"✅ Received {winner_votes} out of {total_voter_count} votes ({win_percentage:.1f}%)\n"
-            message += f"🎉 +5 points added for each match played today!\n\n"
+            message += f"🎉 Bonus points added for each match played today!\n\n"
             message += "📈 Full results:\n"
             for option, votes in sorted(poll_results.items(), key=lambda x: x[1], reverse=True):
                 percentage = (votes / total_voter_count * 100) if total_voter_count > 0 else 0
