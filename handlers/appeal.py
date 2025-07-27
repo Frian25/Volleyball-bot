@@ -83,11 +83,17 @@ def appeal(update: Update, context: CallbackContext):
             except Exception as e:
                 print(f"❌ Error while saving poll data: {e}")
 
-            polls_created.append({
-                'team': team_name,
-                'poll_id': poll_message.poll.id,
-                'message_id': poll_message.message_id
-            })
+            # Додаємо рядок з усіма значеннями одразу
+            appeals_sheet.append_row([
+                appeal_id,
+                today,
+                team_name,
+                poll_message.poll.id,
+                poll_message.message_id,
+                chat_id,
+                'active',
+                ''
+            ])
 
         if not polls_created:
             update.message.reply_text(

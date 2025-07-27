@@ -24,7 +24,7 @@ def get_chat_id_by_poll_id(poll_id):
 
 def poll_handler(update: Update, context: CallbackContext):
     """Обробляє оновлення голосувань, включаючи їх завершення"""
-
+    print("✅ Poll update received")
     poll = update.poll
 
     if not poll:
