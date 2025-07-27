@@ -1,6 +1,6 @@
 from telegram import Update, Poll
 from telegram.ext import CallbackContext
-from datetime import datetime, timedelta
+from handlers.poll_handler import scheduled_poll_finalize_job
 
 from services.sheets import spreadsheet, appeals_sheet, get_existing_teams
 from services.appeal_service import (
@@ -46,6 +46,7 @@ def appeal(update: Update, context: CallbackContext):
 
             poll_players = players[:10]
             question = f"🏐 Who contributed the most in team {team_name}?"
+            finalize_time = 60
 
             poll_message = context.bot.send_poll(
                 chat_id=chat_id,
@@ -53,7 +54,7 @@ def appeal(update: Update, context: CallbackContext):
                 options=poll_players,
                 is_anonymous=True,
                 allows_multiple_answers=True,
-                open_period=60,
+                open_period=finalize_time,
                 explanation="Pick up to 3 top players from this team today. At least 6 votes are needed to validate the results."
             )
 
@@ -69,6 +70,17 @@ def appeal(update: Update, context: CallbackContext):
             ])
 
             polls_created += 1
+
+            # Плануємо автоматичне завершення через 600 сек (10 хв)
+            context.job_queue.run_once(
+                scheduled_poll_finalize_job,
+                when=finalize_time,
+                context={
+                    'chat_id': chat_id,
+                    'message_id': poll_message.message_id,
+                    'poll_id': poll_message.poll.id
+                }
+            )
 
         if polls_created == 0:
             update.message.reply_text(

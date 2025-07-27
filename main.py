@@ -32,7 +32,10 @@ app = Flask(__name__)
 # 🧵 Dispatcher (обробник команд)
 #dispatcher = Dispatcher(bot, None, workers=4)
 update_queue = Queue()
-dispatcher = Dispatcher(bot, update_queue, use_context=True)
+job_queue = JobQueue()
+dispatcher = Dispatcher(bot, update_queue, workers=4, use_context=True, job_queue=job_queue)
+job_queue.set_dispatcher(dispatcher)
+job_queue.start()
 
 # 📌 Реєстрація хендлерів
 dispatcher.add_handler(CommandHandler("generate_teams", generate_teams))

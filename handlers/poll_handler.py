@@ -3,6 +3,7 @@ from telegram.ext import CallbackContext
 
 from services.appeal_service import process_poll_results
 from services.sheets import  appeals_sheet
+import time
 
 
 def poll_answer_handler(update: Update, context: CallbackContext):
@@ -100,3 +101,22 @@ def poll_handler(update: Update, context: CallbackContext):
         context.bot.send_message(
             chat_id=update.effective_chat.id,
             text="⚠️ An error occurred while processing the poll results.")
+
+def scheduled_poll_finalize_job(context: CallbackContext):
+    """Завершує poll через JobQueue і обробляє результати"""
+    job_data = context.job.context
+    chat_id = job_data['chat_id']
+    message_id = job_data['message_id']
+    poll_id = job_data['poll_id']
+
+    try:
+        poll = context.bot.stop_poll(chat_id=chat_id, message_id=message_id)
+        print(f"🛑 Poll {poll_id} stopped automatically via JobQueue")
+
+        poll_results = {opt.text: opt.voter_count for opt in poll.options}
+        winner = process_poll_results(poll.id, poll_results)
+
+        print(f"✅ Poll {poll_id} processed. Winner: {winner}")
+
+    except Exception as e:
+        print(f"❌ Failed to process poll {poll_id}: {e}")
