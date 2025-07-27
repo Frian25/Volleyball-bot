@@ -1,6 +1,7 @@
 import logging
 import time
 import os
+import atexit
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, JobQueue, CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
@@ -15,7 +16,7 @@ from handlers.stats import stats
 from handlers.leaderboard import leaderboard
 from handlers.help_command import help_command
 from handlers.button_handler import button_handler
-from handlers.appeal import appeal
+from handlers.appeal import appeal, check_polls_manual
 from handlers.poll_handler import poll_handler, poll_answer_handler
 
 # 🔧 Налаштування логування
@@ -45,10 +46,10 @@ dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
 dispatcher.add_handler(CommandHandler("appeal", appeal))
+dispatcher.add_handler(CommandHandler("check_polls", check_polls_manual))
 dispatcher.add_handler(CallbackQueryHandler(button_handler))
 dispatcher.add_handler(PollHandler(poll_handler))
 dispatcher.add_handler(PollAnswerHandler(poll_answer_handler))
-
 
 # 🚀 Webhook endpoint
 @app.route(WEBHOOK_PATH, methods=["POST"])
@@ -58,12 +59,10 @@ def webhook():
     dispatcher.process_update(update)
     return "OK"
 
-
 # 🔍 Health check
 @app.route("/", methods=["GET"])
 def root():
     return "✅ Volleyball Rating Bot is running!"
-
 
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -71,7 +70,6 @@ def health_check():
         "status": "healthy",
         "timestamp": time.time()
     }
-
 
 # 🔌 Webhook setup
 def setup_webhook():
@@ -81,20 +79,30 @@ def setup_webhook():
     else:
         logging.warning("⚠️ WEBHOOK_URL is not set")
 
-
-# 🏃‍♂️ Запуск JobQueue в окремому потоці
+# 🏃‍♂️ Запуск JobQueue
 def start_job_queue():
-    job_queue.start()
-    logging.info("✅ JobQueue started")
+    try:
+        job_queue.start()
+        logging.info("✅ JobQueue started successfully")
+    except Exception as e:
+        logging.error(f"❌ Failed to start JobQueue: {e}")
 
+# 🛑 Зупинка JobQueue при завершенні
+def stop_job_queue():
+    try:
+        if job_queue:
+            job_queue.stop()
+            logging.info("✅ JobQueue stopped")
+    except Exception as e:
+        logging.error(f"❌ Error stopping JobQueue: {e}")
 
-# ▶️ Запуск Flask і JobQueue
+# Реєструємо функцію для зупинки при завершенні програми
+atexit.register(stop_job_queue)
+
+# ▶️ Запуск компонентів
+setup_webhook()
+start_job_queue()
+
+# ▶️ Запуск Flask
 if __name__ == "__main__":
-    setup_webhook()
-
-    # ▶️ Запускаємо JobQueue в окремому потоці
-    job_thread = Thread(target=start_job_queue, daemon=True)
-    job_thread.start()
-
-    # ▶️ Запускаємо Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
