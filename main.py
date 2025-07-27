@@ -3,8 +3,9 @@ import time
 import os
 from flask import Flask, request
 from telegram import Bot, Update
-from telegram.ext import Dispatcher, JobQueue,CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
+from telegram.ext import Dispatcher, JobQueue, CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
 from queue import Queue
+from threading import Thread
 
 from config import BOT_TOKEN, WEBHOOK_PATH, WEBHOOK_URL
 from handlers.generate_teams import generate_teams
@@ -29,13 +30,11 @@ bot = Bot(token=BOT_TOKEN)
 # 🌐 Flask додаток
 app = Flask(__name__)
 
-# 🧵 Dispatcher (обробник команд)
-#dispatcher = Dispatcher(bot, None, workers=4)
+# 📬 Dispatcher + JobQueue
 update_queue = Queue()
 job_queue = JobQueue()
-dispatcher = Dispatcher(bot, update_queue, workers=4, use_context=True, job_queue=job_queue)
+dispatcher = Dispatcher(bot, update_queue, use_context=True, job_queue=job_queue)
 job_queue.set_dispatcher(dispatcher)
-job_queue.start()
 
 # 📌 Реєстрація хендлерів
 dispatcher.add_handler(CommandHandler("generate_teams", generate_teams))
@@ -47,8 +46,6 @@ dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
 dispatcher.add_handler(CommandHandler("appeal", appeal))
 dispatcher.add_handler(CallbackQueryHandler(button_handler))
-
-# 🆕 Обробники для голосувань
 dispatcher.add_handler(PollHandler(poll_handler))
 dispatcher.add_handler(PollAnswerHandler(poll_answer_handler))
 
@@ -72,7 +69,7 @@ def health_check():
         "timestamp": time.time()
     }
 
-# 🔌 Webhook setup при запуску
+# 🔌 Webhook setup
 def setup_webhook():
     if WEBHOOK_URL:
         bot.set_webhook(url=WEBHOOK_URL)
@@ -80,7 +77,16 @@ def setup_webhook():
     else:
         logging.warning("⚠️ WEBHOOK_URL is not set")
 
-# ▶️ Запуск Flask
+# ▶️ Запуск Flask і JobQueue
 if __name__ == "__main__":
     setup_webhook()
+
+    # 🔁 Запускаємо JobQueue у фоновому потоці
+    job_thread = Thread(target=job_queue.start)
+    job_thread.start()
+
+    # ▶️ Запускаємо Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+    # 🧷 Очікуємо завершення job потоку (не обов’язково, але добре мати)
+    job_thread.join()
