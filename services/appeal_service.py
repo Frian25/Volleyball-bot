@@ -130,8 +130,8 @@ def process_poll_results(poll_id, poll_results):
         if total_votes < 6:
             # Недостатньо голосів
             result_text = f"insufficient_votes_{total_votes}"
-            appeals_sheet.update_cell(target_row_idx, 6, 'completed')  # status
-            appeals_sheet.update_cell(target_row_idx, 7, result_text)  # results
+            appeals_sheet.update_cell(target_row_idx, 7, 'completed')  # status
+            appeals_sheet.update_cell(target_row_idx, 8, result_text)  # results
             return
 
         # Перевіряємо, чи є гравець з 66%+ голосів
