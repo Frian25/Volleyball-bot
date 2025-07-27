@@ -37,40 +37,38 @@ def poll_handler(update: Update, context: CallbackContext):
         chat_id = update.effective_chat.id
 
         if total_voter_count < 6:
-            message = f"📊 Голосування завершено!\n\n"
-            message += f"❌ Недостатньо голосів для нарахування бонусів.\n"
-            message += f"Отримано голосів: {total_voter_count}\n"
-            message += f"Потрібно мінімум: 6\n\n"
-            message += "📈 Результати голосування:\n"
+            message = f"📊 Poll ended!\n\n"
+            message += f"❌ Not enough votes to award bonus points.\n"
+            message += f"Votes received: {total_voter_count}\n"
+            message += f"Required minimum: 6\n\n"
+            message += "📈 Poll results:\n"
             for option, votes in sorted(poll_results.items(), key=lambda x: x[1], reverse=True):
                 percentage = (votes / total_voter_count * 100) if total_voter_count > 0 else 0
                 message += f"• {option}: {votes} ({percentage:.1f}%)\n"
 
         elif winner:
-            # Розраховуємо відсоток голосів переможця
             winner_votes = poll_results[winner]
             win_percentage = (winner_votes / total_voter_count) * 100
 
-            message = f"📊 Голосування завершено!\n\n"
-            message += f"🏆 MVP обрано: **{winner}**\n"
-            message += f"✅ Отримано {winner_votes} з {total_voter_count} голосів ({win_percentage:.1f}%)\n"
-            message += f"🎉 Нарахованo +5 балів за кожен матч сьогодні!\n\n"
-            message += "📈 Повні результати:\n"
+            message = f"📊 Poll ended!\n\n"
+            message += f"🏆 MVP selected: **{winner}**\n"
+            message += f"✅ Received {winner_votes} out of {total_voter_count} votes ({win_percentage:.1f}%)\n"
+            message += f"🎉 +5 points added for each match played today!\n\n"
+            message += "📈 Full results:\n"
             for option, votes in sorted(poll_results.items(), key=lambda x: x[1], reverse=True):
                 percentage = (votes / total_voter_count * 100) if total_voter_count > 0 else 0
                 emoji = "🏆" if option == winner else "•"
                 message += f"{emoji} {option}: {votes} ({percentage:.1f}%)\n"
 
         else:
-            # Жоден гравець не набрав 66%
             max_votes = max(poll_results.values()) if poll_results else 0
             max_percentage = (max_votes / total_voter_count * 100) if total_voter_count > 0 else 0
 
-            message = f"📊 Голосування завершено!\n\n"
-            message += f"❌ Жоден гравець не набрав достатньо голосів (потрібно 66%+).\n"
-            message += f"Найбільше голосів: {max_votes} ({max_percentage:.1f}%)\n"
-            message += f"Загальна кількість голосів: {total_voter_count}\n\n"
-            message += "📈 Результати голосування:\n"
+            message = f"📊 Poll ended!\n\n"
+            message += f"❌ No player received enough votes (66%+ required).\n"
+            message += f"Top vote count: {max_votes} ({max_percentage:.1f}%)\n"
+            message += f"Total votes: {total_voter_count}\n\n"
+            message += "📈 Poll results:\n"
             for option, votes in sorted(poll_results.items(), key=lambda x: x[1], reverse=True):
                 percentage = (votes / total_voter_count * 100) if total_voter_count > 0 else 0
                 message += f"• {option}: {votes} ({percentage:.1f}%)\n"
@@ -82,8 +80,7 @@ def poll_handler(update: Update, context: CallbackContext):
         )
 
     except Exception as e:
-        print(f"❌ Помилка при обробці завершеного голосування: {e}")
+        print(f"❌ Error while processing finished poll: {e}")
         context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="⚠️ Сталася помилка при обробці результатів голосування."
-        )
+            text="⚠️ An error occurred while processing the poll results.")

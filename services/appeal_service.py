@@ -22,7 +22,7 @@ def can_create_appeal_today(date):
 
         return True
     except Exception as e:
-        print(f"Помилка при перевірці можливості створення апеляції: {e}")
+        print(f"Error while checking appeal eligibility: {e}")
         return False
 
 
@@ -38,7 +38,7 @@ def is_appeal_active(date):
 
         return False
     except Exception as e:
-        print(f"Помилка при перевірці активної апеляції: {e}")
+        print(f"Error while checking appeal eligibility: {e}")
         return False
 
 
@@ -77,7 +77,7 @@ def get_today_teams_and_players(date):
 
         return teams_data
     except Exception as e:
-        print(f"Помилка при отриманні команд та гравців: {e}")
+        print(f"Error while retrieving teams and players: {e}")
         return {}
 
 
@@ -98,7 +98,7 @@ def create_appeal_record(date, teams_data):
 
         return appeal_id
     except Exception as e:
-        print(f"Помилка при створенні запису апеляції: {e}")
+        print(f"Error while creating the appeal record: {e}")
         raise e
 
 
@@ -121,7 +121,7 @@ def process_poll_results(poll_id, poll_results):
                 break
 
         if not target_row_idx:
-            print(f"Не знайдено запис для poll_id: {poll_id}")
+            print(f"No record found for poll_id.: {poll_id}")
             return
 
         # Аналізуємо результати голосування
@@ -160,7 +160,7 @@ def process_poll_results(poll_id, poll_results):
         return winner
 
     except Exception as e:
-        print(f"Помилка при обробці результатів голосування: {e}")
+        print(f"Error while processing poll results: {e}")
         return None
 
 
@@ -187,7 +187,7 @@ def apply_bonus_rating(player_name, date):
                 break
 
         if player_col_idx is None:
-            print(f"Гравець {player_name} не знайдений у таблиці рейтингів")
+            print(f"Player {player_name} didn't find in the rating sheet.")
             return 0
 
         # Знаходимо останній рядок з рейтингом
@@ -204,7 +204,7 @@ def apply_bonus_rating(player_name, date):
         return bonus_points
 
     except Exception as e:
-        print(f"Помилка при застосуванні бонусних балів: {e}")
+        print(f"Error while applying bonus points.: {e}")
         return 0
 
 
@@ -235,7 +235,7 @@ def get_player_matches_today(player_name, date):
         return matches_today
 
     except Exception as e:
-        print(f"Помилка при підрахунку матчів гравця: {e}")
+        print(f"Error while counting player's matches: {e}")
         return 0
 
 
@@ -264,4 +264,4 @@ def save_mvp_result(player_name, date, matches_count, bonus_points, old_rating, 
         ])
 
     except Exception as e:
-        print(f"Помилка при збереженні MVP результату: {e}")
+        print(f"Error while counting player's matches: {e}")

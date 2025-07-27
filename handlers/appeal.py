@@ -17,7 +17,7 @@ def appeal(update: Update, context: CallbackContext):
 
     # Перевіряємо, що команда викликана в груповому чаті
     if update.message.chat.type == 'private':
-        update.message.reply_text("⚠️ Ця команда доступна тільки в груповому чаті.")
+        update.message.reply_text("⚠️ This command can only be used in a group.")
         return
 
     try:
@@ -26,12 +26,12 @@ def appeal(update: Update, context: CallbackContext):
         # Перевіряємо, чи вже була створена апеляція сьогодні
         if not can_create_appeal_today(today):
             update.message.reply_text(
-                "⚠️ Апеляція вже була створена сьогодні. Можна створювати тільки одну апеляцію на день.")
+                "⚠️ An appeal has already been created today. You can only create one appeal per day.")
             return
 
         # Перевіряємо, чи є активна апеляція
         if is_appeal_active(today):
-            update.message.reply_text("⚠️ Апеляція вже активна. Дочекайтеся завершення поточного голосування.")
+            update.message.reply_text("⚠️ An appeal is already active. Please wait for the current poll to finish.")
             return
 
         # Отримуємо команди та гравців на сьогодні
@@ -39,7 +39,7 @@ def appeal(update: Update, context: CallbackContext):
 
         if not teams_data:
             update.message.reply_text(
-                "⚠️ Не знайдено команд на сьогодні. Спочатку потрібно створити команди за допомогою /generate_teams.")
+                "⚠️ No teams found for today.")
             return
 
         # Створюємо запис про апеляцію
@@ -57,7 +57,7 @@ def appeal(update: Update, context: CallbackContext):
             poll_players = players[:10]
 
             # Створюємо питання для poll
-            question = f"🏐 Хто найкраще зіграв у команді {team_name}?"
+            question = f"🏐 Who contributed the most in team {team_name}?"
 
             # Створюємо poll
             poll_message = context.bot.send_poll(
@@ -66,8 +66,8 @@ def appeal(update: Update, context: CallbackContext):
                 options=poll_players,
                 is_anonymous=True,
                 allows_multiple_answers=True,  # Дозволяємо вибрати до 3 варіантів
-                open_period=3600,  # 1 година = 3600 секунд
-                explanation="Виберіть до 3 гравців, які найкраще зіграли в цій команді сьогодні. Мінімум 6 голосів для валідації."
+                open_period=60,  # 10 хвилин = 600 секунд
+                explanation="Pick up to 3 top players from this team today. At least 6 votes are needed to validate the results."
             )
 
             polls_created.append({
@@ -78,7 +78,7 @@ def appeal(update: Update, context: CallbackContext):
 
         if not polls_created:
             update.message.reply_text(
-                "⚠️ Не вдалося створити голосування. Переконайтеся, що є команди з принаймні 2 гравцями.")
+                "⚠️ Poll creation failed. Please ensure each team has at least 2 players.")
             return
 
         # Зберігаємо інформацію про створені poll'и
@@ -94,15 +94,15 @@ def appeal(update: Update, context: CallbackContext):
                 ''  # results (буде заповнено після завершення)
             ])
 
-        success_message = f"✅ Апеляція створена! Створено {len(polls_created)} голосувань.\n\n"
-        success_message += "📊 Умови для нарахування бонусних балів:\n"
-        success_message += "• Мінімум 6 голосів у опитуванні\n"
-        success_message += "• 66%+ голосів за одного гравця\n"
-        success_message += "• +5 балів до рейтингу за кожен матч сьогодні\n\n"
-        success_message += "⏰ Голосування триватиме 1 годину."
+        success_message = f"✅ Appeal created! {len(polls_created)} polls have been launched.\n\n"
+        success_message += "📊 Conditions for awarding bonus points:\n"
+        success_message += "• At least 6 votes in the poll\n"
+        success_message += "• 66%+ votes for one player\n"
+        success_message += "• +5 rating points for each match played today\n\n"
+        success_message += "⏰ Voting will be open for 10 minutes."
 
         update.message.reply_text(success_message)
 
     except Exception as e:
-        print(f"❌ Помилка в команді appeal: {e}")
-        update.message.reply_text(f"⚠️ Сталася помилка при створенні апеляції: {e}")
+        print(f"❌ Appeal command failed : {e}")
+        update.message.reply_text(f"⚠️ An error occurred while creating the appeal: {e}")
