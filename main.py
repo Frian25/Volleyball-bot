@@ -3,7 +3,8 @@ import time
 import os
 from flask import Flask, request
 from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
+from telegram.ext import Dispatcher, JobQueue,CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
+from queue import Queue
 
 from config import BOT_TOKEN, WEBHOOK_PATH, WEBHOOK_URL
 from handlers.generate_teams import generate_teams
@@ -29,7 +30,9 @@ bot = Bot(token=BOT_TOKEN)
 app = Flask(__name__)
 
 # 🧵 Dispatcher (обробник команд)
-dispatcher = Dispatcher(bot, None, workers=4)
+#dispatcher = Dispatcher(bot, None, workers=4)
+update_queue = Queue()
+dispatcher = Dispatcher(bot, update_queue, use_context=True)
 
 # 📌 Реєстрація хендлерів
 dispatcher.add_handler(CommandHandler("generate_teams", generate_teams))

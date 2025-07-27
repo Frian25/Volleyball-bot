@@ -13,9 +13,6 @@ from utils.misc import get_today_date
 
 
 def appeal(update: Update, context: CallbackContext):
-    """Команда для створення апеляції з анонімними голосуваннями"""
-
-    # Перевіряємо, що команда викликана в груповому чаті
     if update.message.chat.type == 'private':
         update.message.reply_text("⚠️ This command can only be used in a group.")
         return
@@ -23,67 +20,43 @@ def appeal(update: Update, context: CallbackContext):
     try:
         today = get_today_date()
 
-        # Перевіряємо, чи вже була створена апеляція сьогодні
         if not can_create_appeal_today(today):
             update.message.reply_text(
                 "⚠️ An appeal has already been created today. You can only create one appeal per day.")
             return
 
-        # Перевіряємо, чи є активна апеляція
         if is_appeal_active(today):
             update.message.reply_text("⚠️ An appeal is already active. Please wait for the current poll to finish.")
             return
 
-        # Отримуємо команди та гравців на сьогодні
         teams_data = get_today_teams_and_players(today)
 
         if not teams_data:
-            update.message.reply_text(
-                "⚠️ No teams found for today.")
+            update.message.reply_text("⚠️ No teams found for today.")
             return
 
-        # Створюємо запис про апеляцію
         appeal_id = create_appeal_record(today, teams_data)
 
-        # Створюємо poll для кожної команди
-        polls_created = []
+        polls_created = 0
         chat_id = update.message.chat_id
 
         for team_name, players in teams_data.items():
-            if len(players) < 2:  # Пропускаємо команди з менше ніж 2 гравцями
+            if len(players) < 2:
                 continue
 
-            # Обмежуємо до 10 гравців (ліміт Telegram Poll)
             poll_players = players[:10]
-
-            # Створюємо питання для poll
             question = f"🏐 Who contributed the most in team {team_name}?"
 
-            # Створюємо poll
             poll_message = context.bot.send_poll(
                 chat_id=chat_id,
                 question=question,
                 options=poll_players,
                 is_anonymous=True,
-                allows_multiple_answers=True,  # Дозволяємо вибрати до 3 варіантів
-                open_period=60,  # 10 хвилин = 600 секунд
+                allows_multiple_answers=True,
+                open_period=60,
                 explanation="Pick up to 3 top players from this team today. At least 6 votes are needed to validate the results."
             )
 
-            # Оновити Appeals — вставити chat_id та message_id
-            try:
-                appeals_sheet = spreadsheet.worksheet("Appeals")
-                all_rows = appeals_sheet.get_all_values()
-
-                for i, row in enumerate(all_rows[1:], start=2):  # починаємо з 2 бо заголовок
-                    if len(row) >= 4 and row[3] == poll_message.poll.id:  # колонка з poll_id
-                        appeals_sheet.update_cell(i, 5, poll_message.message_id)  # message_id (5-та колонка)
-                        appeals_sheet.update_cell(i, 6, poll_message.chat.id)  # chat_id (6-та колонка)
-                        break
-            except Exception as e:
-                print(f"❌ Error while saving poll data: {e}")
-
-            # Додаємо рядок з усіма значеннями одразу
             appeals_sheet.append_row([
                 appeal_id,
                 today,
@@ -95,25 +68,14 @@ def appeal(update: Update, context: CallbackContext):
                 ''
             ])
 
-        if not polls_created:
+            polls_created += 1
+
+        if polls_created == 0:
             update.message.reply_text(
                 "⚠️ Poll creation failed. Please ensure each team has at least 2 players.")
             return
 
-        # Зберігаємо інформацію про створені poll'и
-        for poll_info in polls_created:
-            appeals_sheet.append_row([
-                appeal_id,
-                today,
-                poll_info['team'],
-                poll_info['poll_id'],
-                poll_info['message_id'],
-                chat_id,
-                'active',
-                ''  # results (буде заповнено після завершення)
-            ])
-
-        success_message = f"✅ Appeal created! {len(polls_created)} polls have been launched.\n\n"
+        success_message = f"✅ Appeal created! {polls_created} polls have been launched.\n\n"
         success_message += "📊 Conditions for awarding bonus points:\n"
         success_message += "• At least 6 votes in the poll\n"
         success_message += "• 66%+ votes for one player\n"
