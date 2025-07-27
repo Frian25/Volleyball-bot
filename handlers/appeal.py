@@ -252,7 +252,7 @@ def check_polls_manual(update: Update, context: CallbackContext):
                             winner = process_poll_results(poll_id, poll_results)
 
                             # Оновлюємо статус
-                            appeals_sheet.update_cell(i, 6, 'completed')
+                            appeals_sheet.update_cell(i, 7, 'completed')
 
                             # Відправляємо результати
                             send_poll_results(context, chat_id, team_name, poll_results, winner, poll.total_voter_count)
