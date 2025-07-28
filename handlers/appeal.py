@@ -48,19 +48,19 @@ def appeal(update: Update, context: CallbackContext):
 
             poll_players = players[:10]
             question = f"🏐 Who contributed the most in team {team_name}?"
-
+            closer = 600
             # Створюємо poll БЕЗ open_period
             poll_message = context.bot.send_poll(
                 chat_id=chat_id,
                 question=question,
                 options=poll_players,
-                open_period=600,
+                open_period=closer,
                 is_anonymous=True,
                 allows_multiple_answers=True
             )
 
             # Зберігаємо інформацію про poll з timestamp закриття
-            close_time = datetime.now() + timedelta(seconds=600)  # 10 хвилин
+            close_time = datetime.now() + timedelta(seconds=closer)  # 10 хвилин
             appeals_sheet.append_row([
                 appeal_id,
                 today,
