@@ -54,12 +54,13 @@ def appeal(update: Update, context: CallbackContext):
                 chat_id=chat_id,
                 question=question,
                 options=poll_players,
+                open_period=600,
                 is_anonymous=True,
                 allows_multiple_answers=True
             )
 
             # Зберігаємо інформацію про poll з timestamp закриття
-            close_time = datetime.now() + timedelta(seconds=60)  # 10 хвилин
+            close_time = datetime.now() + timedelta(seconds=600)  # 10 хвилин
             appeals_sheet.append_row([
                 appeal_id,
                 today,
