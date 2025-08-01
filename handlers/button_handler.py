@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import CallbackContext
 
-from services.sheets import spreadsheet
+from services.sheets import spreadsheet, teams_sheet
 from handlers.generate_teams import generate_teams, pending_teams
 
 
@@ -17,8 +17,7 @@ def button_handler(update: Update, context: CallbackContext):
     data = pending_teams[chat_id]
 
     if query.data == "confirm_teams":
-        teams_worksheet = spreadsheet.worksheet("Teams")
-        header = teams_worksheet.row_values(1)
+        header = teams_sheet.row_values(1)
         row = {"date": data["date"]}
 
         for i, team in enumerate(data["teams"]):
@@ -27,7 +26,7 @@ def button_handler(update: Update, context: CallbackContext):
             row[f"avg_rate_team {i + 1}"] = round(data["sums"][i] / data["counts"][i] / 100, 2)
 
         row_data = [row.get(col, "") for col in header]
-        teams_worksheet.append_row(row_data)
+        teams_sheet.append_row(row_data)
 
         query.edit_message_text("✅ Teams confirmed and saved.")
 

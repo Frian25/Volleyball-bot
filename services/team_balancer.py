@@ -1,6 +1,6 @@
 import random
 import pandas as pd
-from services.sheets import spreadsheet
+from services.sheets import spreadsheet, final_score
 from config import INCOMPATIBLE_PAIRS
 
 
@@ -9,8 +9,8 @@ def get_team_candidates():
     Отримати гравців з листа 'Final Score', які позначені як is_ready == 1
     """
     try:
-        sheet = spreadsheet.worksheet("Final Score")
-        df = pd.DataFrame(sheet.get_all_records())
+        final_score
+        df = pd.DataFrame(final_score.get_all_records())
         df = df.query("is_ready == 1")
 
         # перевіримо наявність потрібних колонок

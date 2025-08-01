@@ -16,6 +16,7 @@ client = gspread.authorize(creds)
 
 # Основна таблиця
 spreadsheet = client.open_by_url(SPREADSHEET_URL)
+final_score = spreadsheet.worksheet("Final Score")
 rating_sheet = spreadsheet.worksheet("Rating")
 match_sheet = spreadsheet.worksheet("Matches")
 teams_sheet = spreadsheet.worksheet("Teams")

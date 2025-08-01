@@ -2,14 +2,13 @@ import uuid
 from datetime import datetime
 from collections import Counter
 
-from services.sheets import spreadsheet, teams_sheet, match_sheet, rating_sheet
+from services.sheets import spreadsheet, teams_sheet, match_sheet, rating_sheet, appeals_sheet, mvp_results_sheet
 from services.rating_logic import get_player_games_count
 
 
 def can_create_appeal_today(date):
     """Перевіряє, чи можна створити апеляцію сьогодні (одна на день)"""
     try:
-        appeals_sheet = spreadsheet.worksheet("Appeals")
         all_rows = appeals_sheet.get_all_values()
 
         if len(all_rows) <= 1:  # Тільки заголовки або пусто
@@ -29,7 +28,7 @@ def can_create_appeal_today(date):
 def is_appeal_active(date):
     """Перевіряє, чи є активна апеляція на дату"""
     try:
-        appeals_sheet = spreadsheet.worksheet("Appeals")
+        appeals_sheet
         all_rows = appeals_sheet.get_all_values()
 
         for row in all_rows[1:]:
@@ -85,27 +84,10 @@ def create_appeal_record(date, teams_data):
     """Створює запис про апеляцію та повертає її ID"""
     appeal_id = str(uuid.uuid4())[:8]
 
-    try:
-        # Перевіряємо, чи існує лист Appeals
-        try:
-            appeals_sheet = spreadsheet.worksheet("Appeals")
-        except:
-            # Створюємо лист, якщо його немає
-            appeals_sheet = spreadsheet.add_worksheet(title="Appeals", rows=100, cols=10)
-            # Додаємо заголовки
-            headers = ["appeal_id", "date", "team_name", "poll_id", "message_id", "chat_id", "status", "results"]
-            appeals_sheet.append_row(headers)
-
-        return appeal_id
-    except Exception as e:
-        print(f"Error while creating the appeal record: {e}")
-        raise e
-
-
 def process_poll_results(poll_id, poll_results):
     """Обробляє результати голосування після його завершення"""
     try:
-        appeals_sheet = spreadsheet.worksheet("Appeals")
+        appeals_sheet
         all_rows = appeals_sheet.get_all_values()
 
         # Знаходимо рядок з цим poll_id
@@ -242,18 +224,9 @@ def get_player_matches_today(player_name, date):
 def save_mvp_result(player_name, date, matches_count, bonus_points, old_rating, new_rating):
     """Зберігає результат MVP у таблицю MVP Results"""
     try:
-        # Перевіряємо, чи існує лист MVP Results
-        try:
-            mvp_sheet = spreadsheet.worksheet("MVP Results")
-        except:
-            # Створюємо лист, якщо його немає
-            mvp_sheet = spreadsheet.add_worksheet(title="MVP Results", rows=100, cols=10)
-            headers = ["date", "player_name", "matches_played", "bonus_points", "old_rating", "new_rating", "timestamp"]
-            mvp_sheet.append_row(headers)
-
         # Додаємо новий запис
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        mvp_sheet.append_row([
+        mvp_results_sheet.append_row([
             date,
             player_name,
             matches_count,
