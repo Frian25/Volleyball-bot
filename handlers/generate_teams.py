@@ -43,7 +43,7 @@ def generate_teams(update: Update, context: CallbackContext):
         for name, _ in team:
             text += f"• {name}\n"
         avg_score = round(team_sums[i] / team_counts[i] / 100, 2)
-        text += f"Average rating: {avg_score}_\n"
+        text += f"Average rating: {avg_score}\n"
 
     chat_id = update.message.chat_id
     pending_teams[chat_id] = {
