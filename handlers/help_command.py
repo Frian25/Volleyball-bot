@@ -15,8 +15,11 @@ Example: `/result Red 21 - 18 Blue`
 
 /appeal  
 → Create daily MVP voting (group chat only)  
-→ Anonymous polls for each team, 1 hour duration  
+→ Anonymous polls for each team, 10 minutes duration  
 → bonus rating points per match if player gets 66%+ votes
+
+/check_polls
+→ receive results of appeal (active 10 minutes after the start of the appeal)  
 
 /delete  
 → Delete the last match of today (admin/group only)
