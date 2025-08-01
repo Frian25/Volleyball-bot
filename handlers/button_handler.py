@@ -22,9 +22,9 @@ def button_handler(update: Update, context: CallbackContext):
         row = {"date": data["date"]}
 
         for i, team in enumerate(data["teams"]):
-            row[f"team_{i + 1}"] = data["team_names"][i]
-            row[f"team_{i + 1}_players"] = ", ".join([p for p, _ in team])
-            row[f"avg_rate_team_{i + 1}"] = round(data["sums"][i] / data["counts"][i] / 100, 2)
+            row[f"team {i + 1}"] = data["team_names"][i]
+            row[f"team {i + 1}_players"] = ", ".join([p for p, _ in team])
+            row[f"avg_rate_team {i + 1}"] = round(data["sums"][i] / data["counts"][i] / 100, 2)
 
         row_data = [row.get(col, "") for col in header]
         teams_worksheet.append_row(row_data)
