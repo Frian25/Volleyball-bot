@@ -13,10 +13,25 @@ def poll_answer_handler(update: Update, context: CallbackContext):
 def get_chat_id_by_poll_id(poll_id):
     try:
         all_rows = appeals_sheet.get_all_values()
-        for row in all_rows[1:]:
-            if len(row) >= 6 and row[3] == poll_id:
-                return int(row[5])  # chat_id — колонка 6
+        if not all_rows or len(all_rows) < 2:
+            return None
+
+        headers = all_rows[0]
+        data = all_rows[1:]
+
+        # Побудуємо словник: назва → індекс
+        header_index = {name: idx for idx, name in enumerate(headers)}
+
+        for row in data:
+            if (
+                len(row) > header_index.get("poll_id", -1) and
+                row[header_index["poll_id"]] == poll_id
+            ):
+                chat_id_idx = header_index.get("chat_id")
+                if chat_id_idx is not None and len(row) > chat_id_idx:
+                    return int(row[chat_id_idx])
         return None
+
     except Exception as e:
         print(f"Error while getting chat_id: {e}")
         return None

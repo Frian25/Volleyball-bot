@@ -226,46 +226,48 @@ def check_polls_manual(update: Update, context: CallbackContext):
         chat_id = update.message.chat_id
         current_time = datetime.now()
 
-        # Отримуємо всі активні poll'и з цього чату
+        # Отримуємо всі рядки з таблиці
         all_rows = appeals_sheet.get_all_values()
+        headers = all_rows[0]
+        data = all_rows[1:]
         closed_polls = 0
 
-        for i, row in enumerate(all_rows[1:], start=2):
-            if (len(row) >= 8 and
-                    row[6] == 'active' and  # status
-                    int(row[5]) == chat_id):  # chat_id
+        # Створюємо мапу заголовків
+        col_idx = {key: idx for idx, key in enumerate(headers)}
 
-                poll_id = row[3]
-                message_id = int(row[4])
-                close_time_str = row[7]
-                team_name = row[2]
+        for i, row in enumerate(data, start=2):  # рахунок з другого рядка (1-based)
+            try:
+                status = row[col_idx["status"]]
+                row_chat_id = int(row[col_idx["chat_id"]])
+                poll_id = row[col_idx["poll_id"]]
+                message_id = int(row[col_idx["message_id"]])
+                team_name = row[col_idx["team_name"]]
+                close_time_str = row[col_idx["end_time"]]
 
-                try:
-                    close_time = datetime.strptime(close_time_str, "%Y-%m-%d %H:%M:%S")
+                if status != "active" or row_chat_id != chat_id:
+                    continue
 
-                    # Якщо час закриття пройшов, закриваємо poll
-                    if current_time >= close_time:
-                        try:
-                            poll = context.bot.stop_poll(chat_id=chat_id, message_id=message_id)
+                # Парсимо дату
+                close_time = datetime.strptime(close_time_str, "%Y-%m-%d %H:%M:%S")
 
-                            # Обробляємо результати
-                            poll_results = {opt.text: opt.voter_count for opt in poll.options}
-                            winner = process_poll_results(poll_id, poll_results)
+                if current_time >= close_time:
+                    # Закриваємо опитування
+                    poll = context.bot.stop_poll(chat_id=chat_id, message_id=message_id)
 
-                            # Оновлюємо статус
-                            appeals_sheet.update_cell(i, 7, 'completed')
+                    poll_results = {opt.text: opt.voter_count for opt in poll.options}
+                    winner = process_poll_results(poll_id, poll_results)
 
-                            # Відправляємо результати
-                            send_poll_results(context, chat_id, team_name, poll_results, winner, poll.total_voter_count)
+                    # Оновлюємо статус
+                    appeals_sheet.update_cell(i, col_idx["status"] + 1, 'completed')  # +1 бо gspread 1-based
 
-                            closed_polls += 1
-                            print(f"🛑 Manually closed poll {poll_id}")
+                    # Надсилаємо повідомлення
+                    send_poll_results(context, chat_id, team_name, poll_results, winner, poll.total_voter_count)
 
-                        except Exception as poll_error:
-                            print(f"❌ Failed to close poll {poll_id}: {poll_error}")
+                    closed_polls += 1
+                    print(f"🛑 Manually closed poll {poll_id}")
 
-                except ValueError:
-                    print(f"⚠️ Invalid date format in row {i}: {close_time_str}")
+            except Exception as row_err:
+                print(f"⚠️ Failed to process row {i}: {row_err}")
 
         if closed_polls > 0:
             update.message.reply_text(f"✅ Manually processed {closed_polls} expired polls.")
