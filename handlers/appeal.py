@@ -217,7 +217,6 @@ def send_poll_results(context, chat_id, team_name, poll_results, winner, total_v
 
 
 def check_polls_manual(update: Update, context: CallbackContext):
-    """Ручна команда для перевірки poll'ів"""
     if update.message.chat.type == 'private':
         update.message.reply_text("⚠️ This command can only be used in a group.")
         return
@@ -225,39 +224,45 @@ def check_polls_manual(update: Update, context: CallbackContext):
     try:
         chat_id = update.message.chat_id
         current_time = datetime.now()
+        print(f"🧪 Checking polls manually at {current_time}")
 
-        # Отримуємо всі рядки з таблиці
         all_rows = appeals_sheet.get_all_values()
         headers = all_rows[0]
         data = all_rows[1:]
         closed_polls = 0
 
-        # Створюємо мапу заголовків
-        col_idx = {key: idx for idx, key in enumerate(headers)}
+        col_idx = {key.strip(): idx for idx, key in enumerate(headers)}  # strip пробіли!
 
-        for i, row in enumerate(data, start=2):  # рахунок з другого рядка (1-based)
+        for i, row in enumerate(data, start=2):
             try:
-                status = row[col_idx["status"]]
+                status = row[col_idx["status"]].strip()
                 row_chat_id = int(row[col_idx["chat_id"]])
-                poll_id = row[col_idx["poll_id"]]
+                poll_id = row[col_idx["poll_id"]].strip()
                 message_id = int(row[col_idx["message_id"]])
-                team_name = row[col_idx["team_name"]]
-                close_time_str = row[col_idx["end_time"]]
+                team_name = row[col_idx["team_name"]].strip()
+                close_time_str = row[col_idx["end_time"]].strip()
+
+                print(f"🔎 Row {i} → status={status}, chat_id={row_chat_id}, poll_id={poll_id}, end={close_time_str}")
 
                 if status != "active" or row_chat_id != chat_id:
                     continue
 
-                # Парсимо дату
-                close_time = datetime.strptime(close_time_str, "%Y-%m-%d %H:%M:%S")
+                try:
+                    close_time = datetime.strptime(close_time_str, "%Y-%m-%d %H:%M:%S")
+                except ValueError as e:
+                    print(f"⚠️ Could not parse close_time: {close_time_str} → {e}")
+                    continue
 
                 if current_time >= close_time:
+                    print(f"✅ Poll {poll_id} is expired (now: {current_time}, close: {close_time})")
+
                     try:
                         poll = context.bot.stop_poll(chat_id=chat_id, message_id=message_id)
                     except Exception as stop_err:
                         if "Poll has already been closed" in str(stop_err):
                             print(f"⚠️ Poll {poll_id} already closed, skipping stop_poll")
                             appeals_sheet.update_cell(i, col_idx["status"] + 1, 'completed')
-                            continue  # пропускаємо обробку повторно
+                            continue
                         else:
                             raise stop_err
 
@@ -269,7 +274,6 @@ def check_polls_manual(update: Update, context: CallbackContext):
 
                     closed_polls += 1
                     print(f"🛑 Manually closed poll {poll_id}")
-
 
             except Exception as row_err:
                 print(f"⚠️ Failed to process row {i}: {row_err}")
