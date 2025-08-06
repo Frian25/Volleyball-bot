@@ -74,6 +74,7 @@ def appeal(update: Update, context: CallbackContext):
 
             polls_created += 1
             print(f"✅ Created poll {poll_message.poll.id} for team {team_name}, scheduled to close at {close_time}")
+            print(f"💬 Chat ID: {update.effective_chat.id}")
 
         if polls_created == 0:
             update.message.reply_text(
@@ -225,6 +226,7 @@ def check_polls_manual(update: Update, context: CallbackContext):
         chat_id = update.message.chat_id
         current_time = datetime.now()
         print(f"🧪 Checking polls manually at {current_time}")
+        print(f"💬 Chat ID: {update.effective_chat.id}")
 
         all_rows = appeals_sheet.get_all_values()
         headers = all_rows[0]
@@ -244,7 +246,7 @@ def check_polls_manual(update: Update, context: CallbackContext):
 
                 print(f"🔎 Row {i} → status={status}, chat_id={row_chat_id}, poll_id={poll_id}, end={close_time_str}")
 
-                if status != "active" or row_chat_id != chat_id:
+                if status != "active": #or row_chat_id != chat_id:
                     continue
 
                 try:
