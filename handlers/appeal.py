@@ -251,20 +251,25 @@ def check_polls_manual(update: Update, context: CallbackContext):
                 close_time = datetime.strptime(close_time_str, "%Y-%m-%d %H:%M:%S")
 
                 if current_time >= close_time:
-                    # Закриваємо опитування
-                    poll = context.bot.stop_poll(chat_id=chat_id, message_id=message_id)
+                    try:
+                        poll = context.bot.stop_poll(chat_id=chat_id, message_id=message_id)
+                    except Exception as stop_err:
+                        if "Poll has already been closed" in str(stop_err):
+                            print(f"⚠️ Poll {poll_id} already closed, skipping stop_poll")
+                            appeals_sheet.update_cell(i, col_idx["status"] + 1, 'completed')
+                            continue  # пропускаємо обробку повторно
+                        else:
+                            raise stop_err
 
                     poll_results = {opt.text: opt.voter_count for opt in poll.options}
                     winner = process_poll_results(poll_id, poll_results)
 
-                    # Оновлюємо статус
-                    appeals_sheet.update_cell(i, col_idx["status"] + 1, 'completed')  # +1 бо gspread 1-based
-
-                    # Надсилаємо повідомлення
+                    appeals_sheet.update_cell(i, col_idx["status"] + 1, 'completed')
                     send_poll_results(context, chat_id, team_name, poll_results, winner, poll.total_voter_count)
 
                     closed_polls += 1
                     print(f"🛑 Manually closed poll {poll_id}")
+
 
             except Exception as row_err:
                 print(f"⚠️ Failed to process row {i}: {row_err}")
