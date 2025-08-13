@@ -246,7 +246,7 @@ def check_polls_manual(update: Update, context: CallbackContext):
 
                 print(f"🔎 Row {i} → status={status}, chat_id={row_chat_id}, poll_id={poll_id}, end={close_time_str}")
 
-                if status != "active": #or row_chat_id != chat_id:
+                if status != "active" or row_chat_id != chat_id:
                     continue
 
                 try:
