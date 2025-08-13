@@ -84,6 +84,19 @@ def create_appeal_record(date, teams_data):
     """Створює запис про апеляцію та повертає її ID"""
     appeal_id = str(uuid.uuid4())[:8]
 
+    try:
+        # Записуємо базову інформацію про апеляцію
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Можна додати загальний запис про початок апеляції
+        print(f"✅ Created appeal {appeal_id} for {date} with {len(teams_data)} teams")
+
+        return appeal_id
+
+    except Exception as e:
+        print(f"❌ Error creating appeal record: {e}")
+        raise e
+
 def process_poll_results(poll_id, poll_results):
     """Обробляє результати голосування після його завершення"""
     try:

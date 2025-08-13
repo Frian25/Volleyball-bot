@@ -4,9 +4,8 @@ import os
 import atexit
 from flask import Flask, request
 from telegram import Bot, Update
-from telegram.ext import Dispatcher, JobQueue, CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
+from telegram.ext import Dispatcher, CallbackContext, JobQueue, CommandHandler, CallbackQueryHandler, PollHandler, PollAnswerHandler
 from queue import Queue
-from threading import Thread
 
 from config import BOT_TOKEN, WEBHOOK_PATH, WEBHOOK_URL
 from handlers.generate_teams import generate_teams
@@ -50,6 +49,77 @@ dispatcher.add_handler(CommandHandler("check_polls", check_polls_manual))
 dispatcher.add_handler(CallbackQueryHandler(button_handler))
 dispatcher.add_handler(PollHandler(poll_handler))
 dispatcher.add_handler(PollAnswerHandler(poll_answer_handler))
+
+# Додайте цю функцію в main.py після імпортів
+
+def periodic_poll_check(context: CallbackContext):
+    """Періодично перевіряє та закриває прострочені polls"""
+    try:
+        from datetime import datetime
+        from services.sheets import appeals_sheet
+        from services.appeal_service import process_poll_results
+        from handlers.appeal import send_poll_results, update_poll_status_in_sheet
+
+        current_time = datetime.now()
+
+        all_rows = appeals_sheet.get_all_values()
+        if len(all_rows) <= 1:
+            return
+
+        headers = all_rows[0]
+        col_idx = {header.strip().lower(): idx for idx, header in enumerate(headers)}
+
+        for i, row in enumerate(all_rows[1:], start=2):
+            if len(row) < 8:
+                continue
+
+            try:
+                status = row[col_idx.get('status', 6)].strip()
+                if status != 'active':
+                    continue
+
+                end_time_str = row[col_idx.get('end_time', 7)].strip()
+                poll_id = row[col_idx.get('poll_id', 3)].strip()
+                chat_id = int(row[col_idx.get('chat_id', 5)])
+                message_id = int(row[col_idx.get('message_id', 4)])
+                team_name = row[col_idx.get('team_name', 2)].strip()
+
+                try:
+                    end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+
+                if current_time >= end_time:
+                    print(f"🕐 Periodic check: closing expired poll {poll_id}")
+
+                    try:
+                        poll = context.bot.stop_poll(chat_id=chat_id, message_id=message_id)
+                        poll_results = {opt.text: opt.voter_count for opt in poll.options}
+                        winner = process_poll_results(poll_id, poll_results)
+
+                        update_poll_status_in_sheet(poll_id, 'completed')
+                        send_poll_results(context, chat_id, team_name, poll_results, winner, poll.total_voter_count)
+
+                        print(f"✅ Periodic check: successfully closed poll {poll_id}")
+
+                    except Exception as poll_error:
+                        if "Poll has already been closed" in str(poll_error):
+                            update_poll_status_in_sheet(poll_id, 'completed')
+                        else:
+                            print(f"❌ Periodic check error for poll {poll_id}: {poll_error}")
+
+            except Exception as row_error:
+                print(f"⚠️ Periodic check: error processing row {i}: {row_error}")
+
+    except Exception as e:
+        print(f"❌ Error in periodic poll check: {e}")
+
+
+# Додайте цей рядок після start_job_queue() у функції запуску:
+
+# Запуск періодичної перевірки polls кожні 2 хвилини
+job_queue.run_repeating(periodic_poll_check, interval=120, first=60)
+print("✅ Periodic poll checker started (every 2 minutes)")
 
 # 🚀 Webhook endpoint
 @app.route(WEBHOOK_PATH, methods=["POST"])
