@@ -159,12 +159,14 @@ def close_single_poll(context: CallbackContext):
 
 
 def update_poll_status_in_sheet(poll_id, new_status):
-    """Оновлює статус poll в таблиці Appeals"""
     try:
         all_rows = appeals_sheet.get_all_values()
+        headers = all_rows[0]
+        col_idx = {name.strip().lower(): i for i, name in enumerate(headers)}
+
         for i, row in enumerate(all_rows[1:], start=2):
-            if len(row) >= 4 and row[3] == poll_id:  # poll_id в 4-й колонці (індекс 3)
-                appeals_sheet.update_cell(i, 7, new_status)  # status в 7-й колонці
+            if len(row) > col_idx['poll_id'] and row[col_idx['poll_id']] == poll_id:
+                appeals_sheet.update_cell(i, col_idx['status'] + 1, new_status)  # +1 бо 1-based
                 print(f"✅ Updated poll {poll_id} status to {new_status}")
                 return
         print(f"⚠️ Poll {poll_id} not found in Appeals sheet")
