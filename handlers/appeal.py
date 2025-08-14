@@ -62,7 +62,7 @@ def appeal(update: Update, context: CallbackContext):
             )
 
             # Зберігаємо інформацію про poll
-            close_time = datetime.now() + timedelta(minutes=10)  # 10 хвилин
+            close_time = datetime.now() + timedelta(minutes=1)  # 10 хвилин
             appeals_sheet.append_row([
                 appeal_id,
                 today,
@@ -79,7 +79,7 @@ def appeal(update: Update, context: CallbackContext):
 
             context.job_queue.run_once(
                 close_single_poll,
-                when=600,  # 10 хвилин в секундах
+                when=60,  # 10 хвилин в секундах
                 context={
                     'chat_id': chat_id,
                     'poll_id': poll_message.poll.id,

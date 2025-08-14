@@ -36,7 +36,7 @@ def button_handler(update: Update, context: CallbackContext):
             for name, _ in team:
                 text += f"• {name}\n"
             avg = round(data["sums"][i] / data["counts"][i] / 100, 2)
-            text += f"Average rating: {avg}_\n"
+            text += f"Average rating: {avg}\n"
 
         context.bot.send_message(chat_id, text, parse_mode="Markdown")
         context.bot.send_message(chat_id, "🎉 Good luck in the match!")
